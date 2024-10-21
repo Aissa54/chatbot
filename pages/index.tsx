@@ -1,10 +1,10 @@
+// Forced change to trigger a deployment
 import { useState } from 'react';
 
 export default function Home() {
   const [messages, setMessages] = useState<{ user: string, text: string }[]>([]);
   const [input, setInput] = useState('');
 
-  // Fonction pour envoyer un message au chatbot
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -21,7 +21,6 @@ export default function Home() {
         body: JSON.stringify({ message: input }),
       });
       const data = await response.json();
-      
       setMessages([...newMessages, { user: 'Bot', text: data.reply }]);
     } catch {
       setMessages([...newMessages, { user: 'Bot', text: 'Erreur de communication' }]);
@@ -49,10 +48,7 @@ export default function Home() {
             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
             placeholder="Posez une question..."
           />
-          <button
-            className="bg-blue-500 text-white rounded-lg px-4 ml-2"
-            onClick={sendMessage}
-          >
+          <button className="bg-blue-500 text-white rounded-lg px-4 ml-2" onClick={sendMessage}>
             Envoyer
           </button>
         </div>

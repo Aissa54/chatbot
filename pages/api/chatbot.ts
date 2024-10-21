@@ -1,18 +1,18 @@
+// This is a forced change to test deployment
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'POST') {
     const { message } = req.body;
-
     try {
       const response = await fetch('https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/f0f32691-94d8-4083-9407-9b447062a718', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_Bot_password').toString('base64'), // Remplacez par vos identifiants encodés en base64
-          'Origin': 'http://localhost:3000', // Ajoutez l'origine sûre ici
+          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_Bot_password').toString('base64'),
+          'Origin': 'http://localhost:3000',
         },
-        body: JSON.stringify({ question: message }), // Envoyer la question au format JSON
+        body: JSON.stringify({ question: message }),
       });
 
       const data = await response.json();
