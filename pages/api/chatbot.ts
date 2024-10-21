@@ -9,8 +9,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_Bot_password').toString('base64'),
-          'Origin': 'http://localhost:3000',
+          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_BOT*007!').toString('base64'),
+          'Origin': 'https://chatbot-j5vmjxbff-aisas-projects.vercel.app',
         },
         body: JSON.stringify({ question: message }),
       });
