@@ -23,7 +23,7 @@ export default function Home() {
       const data = await response.json();
       
       setMessages([...newMessages, { user: 'Bot', text: data.reply }]);
-    } catch (error) {
+    } catch {
       setMessages([...newMessages, { user: 'Bot', text: 'Erreur de communication' }]);
     }
   };

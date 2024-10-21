@@ -9,15 +9,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_BOT*007!').toString('base64'), // Remplacez par vos identifiants encodés en base64
-          'Origin': 'http://localhost:3000',
+          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_Bot_password').toString('base64'), // Remplacez par vos identifiants encodés en base64
+          'Origin': 'http://localhost:3000', // Ajoutez l'origine sûre ici
         },
-        body: JSON.stringify({ question: message }), // Envoyer la question en format JSON
+        body: JSON.stringify({ question: message }), // Envoyer la question au format JSON
       });
 
       const data = await response.json();
       res.status(200).json({ reply: data.reply || 'Aucune réponse disponible' });
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: 'Erreur lors de la communication avec Flowise' });
     }
   } else {
