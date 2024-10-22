@@ -4,7 +4,7 @@ import {
   Send, Loader2, Moon, Sun, 
   Download, Mic, MicOff, Trash2
 } from 'lucide-react';
-import '../styles/globals.css';
+
 
 interface Message {
   id: string;
