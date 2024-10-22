@@ -1,14 +1,21 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { 
-  Send, Loader2, RefreshCcw, Moon, Sun, 
+  Send, Loader2, Moon, Sun, 
   Download, Mic, MicOff, Trash2
 } from 'lucide-react';
+import '../styles/globals.css';
 
 interface Message {
   id: string;
   type: 'user' | 'bot';
   content: string;
   timestamp: Date;
+}
+
+interface ChatbotResponse {
+  text: string;
+  error?: string;
 }
 
 const suggestedQuestions = [
@@ -19,26 +26,28 @@ const suggestedQuestions = [
 ];
 
 export default function Home() {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [darkMode, setDarkMode] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(true);
-  const [isClient, setIsClient] = useState(false);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
+  const [isClient, setIsClient] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Indiquer que nous sommes côté client
+  // Indique que nous sommes côté client
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Charger l'historique depuis localStorage uniquement côté client
+  // Charge l'historique depuis localStorage
   useEffect(() => {
     if (isClient) {
       const savedMessages = localStorage.getItem('chatHistory');
+      const savedDarkMode = localStorage.getItem('darkMode');
+      
       if (savedMessages) {
         try {
           const parsedMessages = JSON.parse(savedMessages);
@@ -52,22 +61,20 @@ export default function Home() {
         }
       }
 
-      // Charger le mode sombre depuis localStorage
-      const savedDarkMode = localStorage.getItem('darkMode');
       if (savedDarkMode) {
         setDarkMode(savedDarkMode === 'true');
       }
     }
   }, [isClient]);
 
-  // Sauvegarder l'historique dans localStorage
+  // Sauvegarde l'historique dans localStorage
   useEffect(() => {
     if (isClient && messages.length > 0) {
       localStorage.setItem('chatHistory', JSON.stringify(messages));
     }
   }, [messages, isClient]);
 
-  // Sauvegarder le mode sombre dans localStorage
+  // Gestion du mode sombre
   useEffect(() => {
     if (isClient) {
       localStorage.setItem('darkMode', darkMode.toString());
@@ -102,33 +109,77 @@ export default function Home() {
     }
   }, [isClient]);
 
-  // Gestion des raccourcis clavier
-  useEffect(() => {
-    if (!isClient) return;
+  const handleSubmit = useCallback(async (event: React.FormEvent | Event, suggestedMessage?: string) => {
+    event.preventDefault();
+    const messageToSend = suggestedMessage || message;
+    if (!messageToSend.trim()) return;
 
-    const handleKeyPress = (e: KeyboardEvent) => {
+    const newUserMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: messageToSend.trim(),
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, newUserMessage]);
+    setMessage('');
+    setLoading(true);
+    setError(null);
+    setShowSuggestions(false);
+
+    try {
+      const res = await fetch('/api/chatbot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: messageToSend }),
+      });
+
+      const data: ChatbotResponse = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Une erreur est survenue');
+
+      const botResponse: Message = {
+        id: Date.now().toString(),
+        type: 'bot',
+        content: data.text || 'Désolé, je n\'ai pas compris la question.',
+        timestamp: new Date()
+      };
+
+      setMessages(prev => [...prev, botResponse]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+    } finally {
+      setLoading(false);
+    }
+  }, [message]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && message.trim()) {
         e.preventDefault();
-        handleSubmit(new Event('submit') as any);
+        handleSubmit(new Event('submit'));
       }
       if (e.key === 'Escape') {
         setMessage('');
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [message, isClient]);
+    if (isClient) {
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+    }
+  }, [message, isClient, handleSubmit]);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
       scrollToBottom();
     }
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   const toggleVoiceRecognition = () => {
     if (!recognitionRef.current) {
@@ -173,55 +224,9 @@ export default function Home() {
   const handleSuggestedQuestion = (question: string) => {
     setMessage(question);
     setShowSuggestions(false);
-    handleSubmit(new Event('submit') as any, question);
+    handleSubmit(new Event('submit'), question);
   };
 
-  const handleSubmit = async (event: React.FormEvent, suggestedMessage?: string) => {
-    event.preventDefault();
-    const messageToSend = suggestedMessage || message;
-    if (!messageToSend.trim()) return;
-
-    const newUserMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: messageToSend.trim(),
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, newUserMessage]);
-    setMessage('');
-    setLoading(true);
-    setError(null);
-    setShowSuggestions(false);
-
-    try {
-      const res = await fetch('/api/chatbot', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: messageToSend }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Une erreur est survenue');
-
-      const botResponse: Message = {
-        id: Date.now().toString(),
-        type: 'bot',
-        content: data.text || 'Désolé, je n\'ai pas compris la question.',
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, botResponse]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Protection contre le rendu côté serveur
   if (!isClient) {
     return <div className="min-h-screen bg-gray-50"></div>;
   }
@@ -232,10 +237,12 @@ export default function Home() {
       <header className="bg-white dark:bg-gray-800 shadow-sm py-4 px-6 fixed w-full top-0 z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <img
+            <Image
               src="/images/logo.png"
               alt="ColdBot Logo"
-              className="w-8 h-8 object-contain"
+              width={32}
+              height={32}
+              className="object-contain"
             />
             <h1 className="text-xl font-bold text-gray-800 dark:text-white">
               ColdBot - Spécialiste du froid
@@ -300,10 +307,12 @@ export default function Home() {
                 <div className="flex items-start space-x-2">
                   {msg.type === 'bot' && (
                     <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
-                      <img
+                      <Image
                         src="/images/bot-avatar.png"
                         alt="Bot Avatar"
-                        className="w-10 h-10 rounded-full object-cover"
+                        width={40}
+                        height={40}
+                        className="rounded-full object-cover"
                       />
                     </div>
                   )}
@@ -317,15 +326,17 @@ export default function Home() {
                   >
                     <p className="break-words">{msg.content}</p>
                     <p className="text-xs mt-1 opacity-70">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
+                      {msg.timestamp.toLocaleTimeString()}
                     </p>
                   </div>
                   {msg.type === 'user' && (
                     <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
-                      <img
+                      <Image
                         src="/images/user-avatar.png"
                         alt="User Avatar"
-                        className="w-10 h-10 rounded-full object-cover"
+                        width={40}
+                        height={40}
+                        className="rounded-full object-cover"
                       />
                     </div>
                   )}
@@ -336,10 +347,12 @@ export default function Home() {
           {loading && (
             <div className="flex justify-start items-start space-x-2 animate-[fadeIn_0.3s_ease-in-out]">
               <div className="flex-shrink-0">
-                <img
+                <Image
                   src="/images/bot-avatar.png"
                   alt="Bot Avatar"
-                  className="w-10 h-10 rounded-full object-cover"
+                  width={40}
+                  height={40}
+                  className="rounded-full object-cover"
                 />
               </div>
               <div className="bg-white dark:bg-gray-800 rounded-lg px-4 py-2 shadow-sm">
@@ -369,45 +382,45 @@ export default function Home() {
             onClick={toggleVoiceRecognition}
             className={`p-2 rounded-lg transition-colors ${
               isListening
-                ? 'bg-red-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-            }`}
-            title="Activer/désactiver la reconnaissance vocale"
-          >
-            {isListening ? (
-              <MicOff className="w-5 h-5" />
-            ) : (
-              <Mic className="w-5 h-5" />
-            )}
-          </button>
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Posez votre question... (Appuyez sur Entrée pour envoyer)"
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent 
-                     dark:bg-gray-700 dark:text-white transition-colors"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading || !message.trim()}
-            className="px-6 py-2 bg-blue-500 text-white rounded-lg flex items-center space-x-2 
-                     hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 
-                     disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <Send className="w-5 h-5" />
-                <span>Envoyer</span>
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+              ? 'bg-red-500 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+          }`}
+          title="Activer/désactiver la reconnaissance vocale"
+        >
+          {isListening ? (
+            <MicOff className="w-5 h-5" />
+          ) : (
+            <Mic className="w-5 h-5" />
+          )}
+        </button>
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Posez votre question... (Appuyez sur Entrée pour envoyer)"
+          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
+                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent 
+                   dark:bg-gray-700 dark:text-white transition-colors"
+          disabled={loading}
+        />
+        <button
+          type="submit"
+          disabled={loading || !message.trim()}
+          className="px-6 py-2 bg-blue-500 text-white rounded-lg flex items-center space-x-2 
+                   hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 
+                   disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <>
+              <Send className="w-5 h-5" />
+              <span>Envoyer</span>
+            </>
+          )}
+        </button>
+      </div>
+    </form>
+  </div>
+);
 }
