@@ -15,14 +15,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
 
       const data = await response.json();
-      console.log('Réponse de Flowise :', data); // Ajout pour vérifier le contenu de la réponse
-      if (!data.reply) {
-        res.status(200).json({ reply: 'Aucune réponse disponible' });
-      } else {
-        res.status(200).json({ reply: data.reply });
-      }
+      console.log('Réponse de Flowise:', data);
+
+      // Modification ici pour renvoyer directement la réponse de Flowise
+      res.status(200).json(data);
     } catch (error) {
-      console.error('Erreur lors de la communication avec Flowise :', error);
+      console.error('Erreur lors de la communication avec Flowise:', error);
       res.status(500).json({ error: 'Erreur lors de la communication avec Flowise' });
     }
   } else {
