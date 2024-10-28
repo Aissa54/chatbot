@@ -4,7 +4,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'POST') {
     const { message } = req.body;
     try {
-      const response = await fetch('https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/f0f32691-94d8-4083-9407-9b447062a718', {
+      const response = await fetch('https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/62b0c11f-cd5f-497a-af9a-c28fa99fc9ba', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

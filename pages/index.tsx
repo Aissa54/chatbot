@@ -5,7 +5,6 @@ import {
   Download, Mic, MicOff, Trash2
 } from 'lucide-react';
 
-
 interface Message {
   id: string;
   type: 'user' | 'bot';
@@ -37,12 +36,10 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Indique que nous sommes côté client
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Charge l'historique depuis localStorage
   useEffect(() => {
     if (isClient) {
       const savedMessages = localStorage.getItem('chatHistory');
@@ -67,14 +64,12 @@ export default function Home() {
     }
   }, [isClient]);
 
-  // Sauvegarde l'historique dans localStorage
   useEffect(() => {
     if (isClient && messages.length > 0) {
       localStorage.setItem('chatHistory', JSON.stringify(messages));
     }
   }, [messages, isClient]);
 
-  // Gestion du mode sombre
   useEffect(() => {
     if (isClient) {
       localStorage.setItem('darkMode', darkMode.toString());
@@ -86,7 +81,6 @@ export default function Home() {
     }
   }, [darkMode, isClient]);
 
-  // Initialisation de la reconnaissance vocale
   useEffect(() => {
     if (isClient && (window.SpeechRecognition || (window as any).webkitSpeechRecognition)) {
       const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -233,61 +227,66 @@ export default function Home() {
 
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm py-4 px-6 fixed w-full top-0 z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+      {/* Header responsif */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             <Image
               src="/images/logo.png"
               alt="ColdBot Logo"
               width={32}
               height={32}
-              className="object-contain"
+              className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
+              priority
             />
-            <h1 className="text-xl font-bold text-gray-800 dark:text-white">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
               ColdBot - Spécialiste du froid
             </h1>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1 sm:space-x-2">
             <button
               onClick={clearHistory}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               title="Effacer l'historique"
             >
-              <Trash2 className="w-5 h-5" />
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button
               onClick={exportHistory}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               title="Exporter l'historique"
             >
-              <Download className="w-5 h-5" />
+              <Download className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               title="Changer le thème"
             >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {darkMode ? (
+                <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
+              ) : (
+                <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
             </button>
           </div>
         </div>
       </header>
 
-      {/* Messages Container */}
-      <div className="flex-1 max-w-4xl w-full mx-auto mt-20 mb-24 px-4">
+      {/* Container principal responsif */}
+      <div className="flex-1 max-w-7xl w-full mx-auto mt-16 sm:mt-20 mb-20 sm:mb-24 px-3 sm:px-4 md:px-6">
         <div className="space-y-4 py-4">
           {messages.length === 0 && showSuggestions ? (
             <div className="space-y-4">
-              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                <p>Comment puis-je vous aider aujourd'hui ?</p>
+              <div className="text-center text-gray-500 dark:text-gray-400 py-6 sm:py-8">
+                <p className="text-sm sm:text-base">Comment puis-je vous aider aujourd'hui ?</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                 {suggestedQuestions.map((question, index) => (
                   <button
                     key={index}
                     onClick={() => handleSuggestedQuestion(question)}
-                    className="p-3 text-left text-sm bg-white dark:bg-gray-800 rounded-lg shadow-sm 
+                    className="p-2 sm:p-3 text-left text-sm bg-white dark:bg-gray-800 rounded-lg shadow-sm 
                              hover:shadow-md transition-shadow duration-200 border border-gray-200 
                              dark:border-gray-700 text-gray-700 dark:text-gray-300"
                   >
@@ -304,7 +303,7 @@ export default function Home() {
                           opacity-0 animate-[fadeIn_0.3s_ease-in-out_forwards]`}
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
-                <div className="flex items-start space-x-2">
+                <div className="flex items-start space-x-2 max-w-[90%] sm:max-w-[85%] md:max-w-[75%]">
                   {msg.type === 'bot' && (
                     <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
                       <Image
@@ -312,19 +311,20 @@ export default function Home() {
                         alt="Bot Avatar"
                         width={40}
                         height={40}
-                        className="rounded-full object-cover"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                        priority
                       />
                     </div>
                   )}
                   <div
-                    className={`max-w-[70%] rounded-lg px-4 py-2 
+                    className={`rounded-lg px-3 py-2 sm:px-4 sm:py-2 
                               ${msg.type === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
                         : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white shadow-sm rounded-bl-none'
                       }
                               animate-[slideIn_0.3s_ease-in-out]`}
                   >
-                    <p className="break-words">{msg.content}</p>
+                    <p className="break-words text-sm sm:text-base">{msg.content}</p>
                     <p className="text-xs mt-1 opacity-70">
                       {msg.timestamp.toLocaleTimeString()}
                     </p>
@@ -336,7 +336,8 @@ export default function Home() {
                         alt="User Avatar"
                         width={40}
                         height={40}
-                        className="rounded-full object-cover"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                        priority
                       />
                     </div>
                   )}
@@ -352,17 +353,18 @@ export default function Home() {
                   alt="Bot Avatar"
                   width={40}
                   height={40}
-                  className="rounded-full object-cover"
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                  priority
                 />
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg px-4 py-2 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 sm:px-4 sm:py-2 shadow-sm">
                 <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
               </div>
             </div>
           )}
           {error && (
             <div className="flex justify-center animate-[fadeIn_0.3s_ease-in-out]">
-              <div className="bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 rounded-lg px-4 py-2">
+              <div className="bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base">
                 {error}
               </div>
             </div>
@@ -371,56 +373,58 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Input Form */}
+      {/* Formulaire de saisie responsif */}
       <form
         onSubmit={handleSubmit}
-        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-lg px-4 py-4"
+        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-lg px-3 py-3 sm:px-4 sm:py-4"
       >
-        <div className="max-w-4xl mx-auto flex space-x-4">
+        <div className="max-w-7xl mx-auto flex items-center space-x-2 sm:space-x-4">
           <button
             type="button"
             onClick={toggleVoiceRecognition}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
               isListening
-              ? 'bg-red-500 text-white'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-          }`}
-          title="Activer/désactiver la reconnaissance vocale"
-        >
-          {isListening ? (
-            <MicOff className="w-5 h-5" />
-          ) : (
-            <Mic className="w-5 h-5" />
-          )}
-        </button>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Posez votre question... (Appuyez sur Entrée pour envoyer)"
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
-                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent 
-                   dark:bg-gray-700 dark:text-white transition-colors"
-          disabled={loading}
-        />
-        <button
-          type="submit"
-          disabled={loading || !message.trim()}
-          className="px-6 py-2 bg-blue-500 text-white rounded-lg flex items-center space-x-2 
-                   hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 
-                   disabled:cursor-not-allowed transition-colors"
-        >
-          {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <>
-              <Send className="w-5 h-5" />
-              <span>Envoyer</span>
-            </>
-          )}
-        </button>
-      </div>
-    </form>
-  </div>
-);
+                ? 'bg-red-500 text-white'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+            }`}
+            title="Activer/désactiver la reconnaissance vocale"
+          >
+            {isListening ? (
+              <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />
+            ) : (
+              <Mic className="w-4 h-4 sm:w-5 sm:h-5" />
+            )}
+          </button>
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Posez votre question... (Appuyez sur Entrée pour envoyer)"
+            className="flex-1 px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base border border-gray-300 
+                     dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 
+                     focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 
+                     dark:text-white transition-colors"
+            disabled={loading}
+          />
+          <button
+            type="submit"
+            disabled={loading || !message.trim()}
+            className="px-4 py-2 sm:px-6 sm:py-2 bg-blue-500 text-white rounded-lg 
+                     flex items-center space-x-2 hover:bg-blue-600 disabled:bg-gray-300 
+                     dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors
+                     flex-shrink-0"
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+            ) : (
+              <>
+                <Send className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline">Envoyer</span>
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
