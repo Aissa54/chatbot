@@ -1,8 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { 
-  Send, Loader2, Moon, Sun, 
-  Download, Mic, MicOff, Trash2
+  Send, 
+  Loader2, 
+  Moon, 
+  Sun, 
+  Mic, 
+  MicOff, 
+  Trash2,
+  PanelLeftOpen,
+  PanelLeftClose,
+  Clock,
+  MessageSquare
 } from 'lucide-react';
 
 interface Message {
@@ -24,6 +33,36 @@ const suggestedQuestions = [
   "Quelles sont les obligations d'entretien ?"
 ];
 
+const formatDate = (date: Date | string | number) => {
+  try {
+    const dateObject = date instanceof Date ? date : new Date(date);
+    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
+    return new Intl.DateTimeFormat('fr-FR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }).format(dateObject);
+  } catch (e) {
+    console.error('Erreur de formatage de date:', e);
+    return 'Date non disponible';
+  }
+};
+
+const formatTime = (date: Date | string | number) => {
+  try {
+    const dateObject = date instanceof Date ? date : new Date(date);
+    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
+    return new Intl.DateTimeFormat('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(dateObject);
+  } catch (e) {
+    console.error("Erreur de formatage de l'heure:", e);
+    return '';
+  }
+};
+
 export default function Home() {
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -33,12 +72,11 @@ export default function Home() {
   const [isListening, setIsListening] = useState<boolean>(false);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
   const [isClient, setIsClient] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  useEffect(() => setIsClient(true), []);
 
   useEffect(() => {
     if (isClient) {
@@ -49,12 +87,16 @@ export default function Home() {
         try {
           const parsedMessages = JSON.parse(savedMessages);
           setMessages(parsedMessages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
+            id: msg.id || Date.now().toString(),
+            type: msg.type || 'user',
+            content: msg.content || '',
+            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
           })));
           setShowSuggestions(parsedMessages.length === 0);
         } catch (e) {
-          console.error('Erreur lors du chargement de l\'historique:', e);
+          console.error("Erreur lors du chargement de l'historique:", e);
+          localStorage.removeItem('chatHistory');
+          setMessages([]);
         }
       }
 
@@ -66,18 +108,18 @@ export default function Home() {
 
   useEffect(() => {
     if (isClient && messages.length > 0) {
-      localStorage.setItem('chatHistory', JSON.stringify(messages));
+      const messagesForStorage = messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp.toISOString()
+      }));
+      localStorage.setItem('chatHistory', JSON.stringify(messagesForStorage));
     }
   }, [messages, isClient]);
 
   useEffect(() => {
     if (isClient) {
       localStorage.setItem('darkMode', darkMode.toString());
-      if (darkMode) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+      document.documentElement.classList.toggle('dark', darkMode);
     }
   }, [darkMode, isClient]);
 
@@ -93,13 +135,8 @@ export default function Home() {
         setMessage(transcript);
       };
 
-      recognitionRef.current.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-      };
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
     }
   }, [isClient]);
 
@@ -124,9 +161,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/chatbot', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: messageToSend }),
       });
 
@@ -134,9 +169,9 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || 'Une erreur est survenue');
 
       const botResponse: Message = {
-        id: Date.now().toString(),
+        id: (Date.now() + 1).toString(),
         type: 'bot',
-        content: data.text || 'Désolé, je n\'ai pas compris la question.',
+        content: data.text || "Désolé, je n'ai pas compris la question.",
         timestamp: new Date()
       };
 
@@ -154,9 +189,7 @@ export default function Home() {
         e.preventDefault();
         handleSubmit(new Event('submit'));
       }
-      if (e.key === 'Escape') {
-        setMessage('');
-      }
+      if (e.key === 'Escape') setMessage('');
     };
 
     if (isClient) {
@@ -170,9 +203,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom();
-    }
+    if (messages.length > 0) scrollToBottom();
   }, [messages, scrollToBottom]);
 
   const toggleVoiceRecognition = () => {
@@ -180,39 +211,14 @@ export default function Home() {
       alert("La reconnaissance vocale n'est pas supportée par votre navigateur");
       return;
     }
-
-    if (isListening) {
-      recognitionRef.current.stop();
-    } else {
-      setIsListening(true);
-      recognitionRef.current.start();
-    }
+    isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
+    setIsListening(!isListening);
   };
 
   const clearHistory = () => {
     setMessages([]);
-    if (isClient) {
-      localStorage.removeItem('chatHistory');
-    }
+    if (isClient) localStorage.removeItem('chatHistory');
     setShowSuggestions(true);
-  };
-
-  const exportHistory = () => {
-    const exportData = messages.map(msg => ({
-      type: msg.type,
-      content: msg.content,
-      timestamp: msg.timestamp
-    }));
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `chatbot-history-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleSuggestedQuestion = (question: string) => {
@@ -221,12 +227,108 @@ export default function Home() {
     handleSubmit(new Event('submit'), question);
   };
 
+  const replyToMessage = (messageContent: string) => {
+    setMessage(messageContent);
+    setIsSidebarOpen(false);
+    setTimeout(() => document.querySelector('input[type="text"]')?.focus(), 100);
+  };
+
   if (!isClient) {
     return <div className="min-h-screen bg-gray-50"></div>;
   }
 
+  const groupMessagesByDate = (messages: Message[]) => {
+    return messages.reduce<{[key: string]: Message[]}>((groups, message) => {
+      const date = formatDate(message.timestamp);
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(message);
+      return groups;
+    }, {});
+  };
+
+  const groupedMessages = groupMessagesByDate(messages);
+
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Barre latérale */}
+      <div 
+        className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ease-in-out z-20 
+                   ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+                   w-full sm:w-80`}
+      >
+        <div className="flex flex-col h-full">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
+                Historique
+              </h2>
+            </div>
+            <button
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            >
+              <PanelLeftClose className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+            {Object.entries(groupedMessages).map(([date, dateMessages]) => (
+              <div key={date} className="space-y-2">
+                <div className="sticky top-0 bg-white dark:bg-gray-800 py-2">
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    {date}
+                  </h3>
+                </div>
+                {dateMessages.map(msg => (
+                  <button
+                    key={msg.id}
+                    onClick={() => replyToMessage(msg.content)}
+                    className={`flex items-start space-x-2 p-2 rounded-lg w-full text-left
+                              transition-colors duration-200
+                              ${msg.type === 'user' 
+                                ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30' 
+                                : 'bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/40'}`}
+                  >
+                    <div className="flex-shrink-0">
+                      <Image
+                        src={msg.type === 'user' ? '/images/user-avatar.png' : '/images/bot-avatar.png'}
+                        alt={msg.type === 'user' ? 'User Avatar' : 'Bot Avatar'}
+                        width={24}
+                        height={24}
+                        className="w-6 h-6 rounded-full"
+                        priority
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm break-words">
+                        {msg.content}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {formatTime(msg.timestamp)}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {messages.length === 0 && (
+              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Aucune conversation pour le moment</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Overlay sombre pour mobile */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-10 sm:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Header responsif */}
       <header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -245,18 +347,18 @@ export default function Home() {
           </div>
           <div className="flex items-center space-x-1 sm:space-x-2">
             <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Voir l'historique"
+            >
+              <PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button
               onClick={clearHistory}
               className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               title="Effacer l'historique"
             >
               <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button
-              onClick={exportHistory}
-              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              title="Exporter l'historique"
-            >
-              <Download className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -326,7 +428,7 @@ export default function Home() {
                   >
                     <p className="break-words text-sm sm:text-base">{msg.content}</p>
                     <p className="text-xs mt-1 opacity-70">
-                      {msg.timestamp.toLocaleTimeString()}
+                      {formatTime(msg.timestamp)}
                     </p>
                   </div>
                   {msg.type === 'user' && (
@@ -425,6 +527,24 @@ export default function Home() {
           </button>
         </div>
       </form>
+
+      {/* Footer avec copyright */}
+      <div className="fixed bottom-0 left-0 right-0 bg-transparent text-center text-xs py-1 z-50">
+        <div className="max-w-7xl mx-auto px-4 mb-20">
+          <p className="text-gray-500 dark:text-gray-400">
+            Propulsé par{' '}
+            <a
+              href="https://coldorgsolutions.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
+            >
+              ColdOrg
+            </a>
+            {' '}&copy; {new Date().getFullYear()} - Tous droits réservés
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

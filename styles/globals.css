@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -28,4 +39,45 @@
 
 .animate-slideIn {
   animation: slideIn 0.3s ease-in-out forwards;
+}
+
+/* Support du mode sombre */
+.dark {
+  color-scheme: dark;
+}
+
+/* Styles de base pour une meilleure accessibilité */
+:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Amélioration du contraste en mode sombre */
+.dark ::selection {
+  background-color: #3b82f6;
+  color: white;
+}
+
+/* Styles pour les transitions fluides */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Amélioration du rendu des polices */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Style des boutons désactivés */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
