@@ -230,7 +230,8 @@ export default function Home() {
   const replyToMessage = (messageContent: string) => {
     setMessage(messageContent);
     setIsSidebarOpen(false);
-    setTimeout(() => document.querySelector('input[type="text"]')?.focus(), 100);
+    setTimeout(() => (document.querySelector('input[type="text"]') as HTMLInputElement)?.focus(), 100);
+
   };
 
   if (!isClient) {
