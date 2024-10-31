@@ -1,3 +1,4 @@
+import type { NextPage } from 'next';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { 
@@ -36,7 +37,9 @@ const suggestedQuestions = [
 const formatDate = (date: Date | string | number) => {
   try {
     const dateObject = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
+    if (isNaN(dateObject.getTime())) {
+      throw new Error('Invalid Date');
+    }
     return new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
       year: 'numeric',
@@ -52,18 +55,20 @@ const formatDate = (date: Date | string | number) => {
 const formatTime = (date: Date | string | number) => {
   try {
     const dateObject = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
+    if (isNaN(dateObject.getTime())) {
+      throw new Error('Invalid Date');
+    }
     return new Intl.DateTimeFormat('fr-FR', {
       hour: '2-digit',
       minute: '2-digit'
     }).format(dateObject);
   } catch (e) {
-    console.error("Erreur de formatage de l'heure:", e);
+    console.error('Erreur de formatage de l\'heure:', e);
     return '';
   }
 };
 
-export default function Home() {
+const Home: NextPage = () => {
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -76,7 +81,9 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  useEffect(() => setIsClient(true), []);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     if (isClient) {
@@ -94,7 +101,7 @@ export default function Home() {
           })));
           setShowSuggestions(parsedMessages.length === 0);
         } catch (e) {
-          console.error("Erreur lors du chargement de l'historique:", e);
+          console.error('Erreur lors du chargement de l\'historique:', e);
           localStorage.removeItem('chatHistory');
           setMessages([]);
         }
@@ -230,8 +237,10 @@ export default function Home() {
   const replyToMessage = (messageContent: string) => {
     setMessage(messageContent);
     setIsSidebarOpen(false);
-    setTimeout(() => (document.querySelector('input[type="text"]') as HTMLInputElement)?.focus(), 100);
-
+    setTimeout(() => {
+      const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+      if (inputElement) inputElement.focus();
+    }, 100);
   };
 
   if (!isClient) {
@@ -321,7 +330,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
       {/* Overlay sombre pour mobile */}
       {isSidebarOpen && (
         <div
@@ -378,108 +386,107 @@ export default function Home() {
 
       {/* Container principal responsif */}
       <div className="flex-1 max-w-7xl w-full mx-auto mt-16 sm:mt-20 mb-20 sm:mb-24 px-3 sm:px-4 md:px-6">
-        <div className="space-y-4 py-4">
-          {messages.length === 0 && showSuggestions ? (
-            <div className="space-y-4">
-              <div className="text-center text-gray-500 dark:text-gray-400 py-6 sm:py-8">
-                <p className="text-sm sm:text-base">Comment puis-je vous aider aujourd'hui ?</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                {suggestedQuestions.map((question, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleSuggestedQuestion(question)}
-                    className="p-2 sm:p-3 text-left text-sm bg-white dark:bg-gray-800 rounded-lg shadow-sm 
-                             hover:shadow-md transition-shadow duration-200 border border-gray-200 
-                             dark:border-gray-700 text-gray-700 dark:text-gray-300"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
+        <div className="space-y-4 py-4"></div>
+        {messages.length === 0 && showSuggestions ? (
+          <div className="space-y-4">
+            <div className="text-center text-gray-500 dark:text-gray-400 py-6 sm:py-8">
+              <p className="text-sm sm:text-base">Comment puis-je vous aider aujourd'hui ?</p>
             </div>
-          ) : (
-            messages.map((msg, index) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} 
-                          opacity-0 animate-[fadeIn_0.3s_ease-in-out_forwards]`}
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
-                <div className="flex items-start space-x-2 max-w-[90%] sm:max-w-[85%] md:max-w-[75%]">
-                  {msg.type === 'bot' && (
-                    <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
-                      <Image
-                        src="/images/bot-avatar.png"
-                        alt="Bot Avatar"
-                        width={40}
-                        height={40}
-                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
-                        priority
-                      />
-                    </div>
-                  )}
-                  <div
-                    className={`rounded-lg px-3 py-2 sm:px-4 sm:py-2 
-                              ${msg.type === 'user'
-                        ? 'bg-blue-500 text-white rounded-br-none'
-                        : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white shadow-sm rounded-bl-none'
-                      }
-                              animate-[slideIn_0.3s_ease-in-out]`}
-                  >
-                    <p className="break-words text-sm sm:text-base">{msg.content}</p>
-                    <p className="text-xs mt-1 opacity-70">
-                      {formatTime(msg.timestamp)}
-                    </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+              {suggestedQuestions.map((question, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSuggestedQuestion(question)}
+                  className="p-2 sm:p-3 text-left text-sm bg-white dark:bg-gray-800 rounded-lg shadow-sm 
+                           hover:shadow-md transition-shadow duration-200 border border-gray-200 
+                           dark:border-gray-700 text-gray-700 dark:text-gray-300"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, index) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} 
+                        opacity-0 animate-[fadeIn_0.3s_ease-in-out_forwards]`}
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <div className="flex items-start space-x-2 max-w-[90%] sm:max-w-[85%] md:max-w-[75%]">
+                {msg.type === 'bot' && (
+                  <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
+                    <Image
+                      src="/images/bot-avatar.png"
+                      alt="Bot Avatar"
+                      width={40}
+                      height={40}
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                      priority
+                    />
                   </div>
-                  {msg.type === 'user' && (
-                    <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
-                      <Image
-                        src="/images/user-avatar.png"
-                        alt="User Avatar"
-                        width={40}
-                        height={40}
-                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
-                        priority
-                      />
-                    </div>
-                  )}
+                )}
+                <div
+                  className={`rounded-lg px-3 py-2 sm:px-4 sm:py-2 
+                            ${msg.type === 'user'
+                    ? 'bg-blue-500 text-white rounded-br-none'
+                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white shadow-sm rounded-bl-none'
+                  }
+                            animate-[slideIn_0.3s_ease-in-out]`}
+                >
+                  <p className="break-words text-sm sm:text-base">{msg.content}</p>
+                  <p className="text-xs mt-1 opacity-70">
+                    {formatTime(msg.timestamp)}
+                  </p>
                 </div>
-              </div>
-            ))
-          )}
-          {loading && (
-            <div className="flex justify-start items-start space-x-2 animate-[fadeIn_0.3s_ease-in-out]">
-              <div className="flex-shrink-0">
-                <Image
-                  src="/images/bot-avatar.png"
-                  alt="Bot Avatar"
-                  width={40}
-                  height={40}
-                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
-                  priority
-                />
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 sm:px-4 sm:py-2 shadow-sm">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                {msg.type === 'user' && (
+                  <div className="flex-shrink-0 animate-[slideIn_0.3s_ease-in-out]">
+                    <Image
+                      src="/images/user-avatar.png"
+                      alt="User Avatar"
+                      width={40}
+                      height={40}
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                      priority
+                    />
+                  </div>
+                )}
               </div>
             </div>
-          )}
-          {error && (
-            <div className="flex justify-center animate-[fadeIn_0.3s_ease-in-out]">
-              <div className="bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base">
-                {error}
-              </div>
+          ))
+        )}
+        {loading && (
+          <div className="flex justify-start items-start space-x-2 animate-[fadeIn_0.3s_ease-in-out]">
+            <div className="flex-shrink-0">
+              <Image
+                src="/images/bot-avatar.png"
+                alt="Bot Avatar"
+                width={40}
+                height={40}
+                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
+                priority
+              />
             </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 sm:px-4 sm:py-2 shadow-sm">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="flex justify-center animate-[fadeIn_0.3s_ease-in-out]">
+            <div className="bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 rounded-lg px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base">
+              {error}
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Formulaire de saisie responsif */}
       <form
         onSubmit={handleSubmit}
-        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 shadow-lg px-3 py-3 sm:px-4 sm:py-4"
+        className="fixed bottom-12 left-0 right-0 bg-white dark:bg-gray-800 shadow-lg px-3 py-3 sm:px-4 sm:py-4"
       >
         <div className="max-w-7xl mx-auto flex items-center space-x-2 sm:space-x-4">
           <button
@@ -529,9 +536,10 @@ export default function Home() {
         </div>
       </form>
 
+      
       {/* Footer avec copyright */}
-      <div className="fixed bottom-0 left-0 right-0 bg-transparent text-center text-xs py-1 z-50">
-        <div className="max-w-7xl mx-auto px-4 mb-20">
+      <div className="fixed bottom-0 left-0 right-0 w-full text-center text-xs py-2 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4">
           <p className="text-gray-500 dark:text-gray-400">
             Propulsé par{' '}
             <a
@@ -548,4 +556,6 @@ export default function Home() {
       </div>
     </div>
   );
-}
+};
+
+export default Home;
