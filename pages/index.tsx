@@ -28,8 +28,6 @@ interface ChatbotResponse {
 }
 
 const suggestedQuestions = [
-  "Quelles sont les normes F-Gas ?",
-  "Comment calculer la puissance frigorifique ?",
   "Quel est le prix d'une amende de classe 3 ?",
   "Quelles sont les obligations d'entretien ?"
 ];
