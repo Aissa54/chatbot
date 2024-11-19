@@ -349,13 +349,12 @@ const Home: NextPage = () => {
           <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
         )}
       </button>
-      {console.log('=== DEBUG ADMIN BUTTON ===');
-      console.log('Session:', session);
-      console.log('User email:', session?.user?.email);
-      console.log('Should show admin button:', session?.user?.email === 'aissa.moustaine@gmail.com');
-      console.log('=========================')
-      }
-      {session?.user?.email === 'aissa.moustaine@gmail.com' && (
+        console.log('=== DEBUG ADMIN BUTTON ===');
+        console.log('Session:', session);
+        console.log('User email:', session?.user?.email);
+        console.log('Should show admin button:', session?.user?.email === 'aissa.moustaine@gmail.com');
+        console.log('=========================');
+        {session?.user?.email === 'aissa.moustaine@gmail.com' && (
         <button
           onClick={() => router.push('/admin/history')}
           className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
