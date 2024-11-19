@@ -1,30 +1,65 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+// pages/api/chatbot.ts
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import type { NextRequest } from 'next/server';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method === 'POST') {
-    const { message } = req.body;
-    try {
-      const response = await fetch('https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/62b0c11f-cd5f-497a-af9a-c28fa99fc9ba', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_BOT*007!').toString('base64'),
-          'Origin': 'https://chatbot-j5vmjxbff-aisas-projects.vercel.app',
-        },
-        body: JSON.stringify({ question: message }),
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const { message } = await req.json();
+
+    // Vérifier l'authentification
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return new Response(JSON.stringify({ error: 'Non autorisé' }), { 
+        status: 401 
+      });
+    }
+
+    // Appel à Flowise
+    const flowiseResponse = await fetch('https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/62b0c11f-cd5f-497a-af9a-c28fa99fc9ba', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + Buffer.from('COLDORG:Test_BOT*007!').toString('base64'),
+      },
+      body: JSON.stringify({ question: message }),
+    });
+
+    const botResponse = await flowiseResponse.json();
+
+    // Sauvegarder la question et la réponse
+    const { error: dbError } = await supabase
+      .from('question_history')
+      .insert({
+        user_id: session.user.id,
+        question: message,
+        repondre: botResponse.text,
+        created_at: new Date().toISOString()
       });
 
-      const data = await response.json();
-      console.log('Réponse de Flowise:', data);
+    if (dbError) throw dbError;
 
-      // Modification ici pour renvoyer directement la réponse de Flowise
-      res.status(200).json(data);
-    } catch (error) {
-      console.error('Erreur lors de la communication avec Flowise:', error);
-      res.status(500).json({ error: 'Erreur lors de la communication avec Flowise' });
-    }
-  } else {
-    res.setHeader('Allow', ['POST']);
-    res.status(405).end(`Méthode ${req.method} non autorisée`);
+    // Mettre à jour les statistiques utilisateur
+    const { error: userUpdateError } = await supabase
+      .from('Utilisateurs')
+      .update({ 
+        questions_used: supabase.sql`questions_used + 1`,
+        last_question_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', session.user.id);
+
+    if (userUpdateError) throw userUpdateError;
+
+    return new Response(JSON.stringify(botResponse), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  } catch (error: any) {
+    console.error('Erreur:', error);
+    return new Response(JSON.stringify({ error: error.message }), { 
+      status: 500 
+    });
   }
 }

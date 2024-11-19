@@ -14,9 +14,11 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   Clock,
-  MessageSquare
+  MessageSquare,
+  Settings
 } from 'lucide-react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import type { Session } from '@supabase/supabase-js';
 
 interface Message {
   id: string;
@@ -70,6 +72,7 @@ const formatTime = (date: Date | string | number) => {
 };
 
 const Home: NextPage = () => {
+  const [session, setSession] = useState<Session | null>(null);
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -86,6 +89,20 @@ const Home: NextPage = () => {
   const supabase = createClientComponentClient();
 
   // Vérification de l'authentification
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+    };
+    
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
   useEffect(() => {
     const checkUser = async () => {
       try {
@@ -289,6 +306,78 @@ const Home: NextPage = () => {
 
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Header */}
+      {/* Header */}
+<header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
+  <div className="max-w-7xl mx-auto flex items-center justify-between">
+    <div className="flex items-center space-x-2 sm:space-x-4">
+      <Image
+        src="/images/logo.png"
+        alt="ColdBot Logo"
+        width={32}
+        height={32}
+        className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
+        priority
+      />
+      <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
+        ColdBot - Spécialiste du froid
+      </h1>
+    </div>
+    <div className="flex items-center space-x-1 sm:space-x-2">
+      <button
+        onClick={() => setIsSidebarOpen(true)}
+        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        title="Voir l'historique"
+      >
+        <PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+      </button>
+      <button
+        onClick={clearHistory}
+        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        title="Effacer l'historique"
+      >
+        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+      </button>
+      <button
+        onClick={() => setDarkMode(!darkMode)}
+        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        title="Changer le thème"
+      >
+        {darkMode ? (
+          <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
+        ) : (
+          <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
+        )}
+      </button>
+      {console.log('=== DEBUG ADMIN BUTTON ===');
+      console.log('Session:', session);
+      console.log('User email:', session?.user?.email);
+      console.log('Should show admin button:', session?.user?.email === 'aissa.moustaine@gmail.com');
+      console.log('=========================')
+      }
+      {session?.user?.email === 'aissa.moustaine@gmail.com' && (
+        <button
+          onClick={() => router.push('/admin/history')}
+          className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+          title="Administration"
+        >
+          <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+      )}
+      <button
+        onClick={handleSignOut}
+        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        title="Se déconnecter"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
       {/* Barre latérale */}
       <div 
         className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ease-in-out z-20 
@@ -368,62 +457,6 @@ const Home: NextPage = () => {
         />
       )}
 
-      {/* Header responsif */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            <Image
-              src="/images/logo.png"
-              alt="ColdBot Logo"
-              width={32}
-              height={32}
-              className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
-              priority
-            />
-            <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
-              ColdBot - Spécialiste du froid
-            </h1>
-          </div>
-          <div className="flex items-center space-x-1 sm:space-x-2">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              title="Voir l'historique"
-            >
-              <PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button
-              onClick={clearHistory}
-              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              title="Effacer l'historique"
-            >
-              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              title="Changer le thème"
-            >
-              {darkMode ? (
-                <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
-              ) : (
-                <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
-              )}
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              title="Se déconnecter"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </header>
 
       {/* Container principal responsif */}
       <div className="flex-1 max-w-7xl w-full mx-auto mt-16 sm:mt-20 mb-20 sm:mb-24 px-3 sm:px-4 md:px-6">
