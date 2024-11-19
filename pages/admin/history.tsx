@@ -109,7 +109,7 @@ export default function HistoryAdmin() {
 
   useEffect(() => {
     fetchData();
-  }, [dateRange, userFilter, searchTerm]);
+  }, [dateRange, userFilter, searchTerm,fetchData]);
 
   // Export CSV
   const exportCSV = () => {
