@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 const AdminLink = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch('/api/check-admin');
-      const data = await res.json();
-      setIsAdmin(data.isAdmin);
-    } catch (error) {
-      console.error('Error:', error);
-      setIsAdmin(false);
-    }
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch('/api/check-admin');
+        const data = await res.json();
+        setIsAdmin(data.isAdmin);
+      } catch (error) {
+        console.error('Error:', error);
+        setIsAdmin(false);
+      }
+    };
+    
+    fetchData();
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  if (!isAdmin) return null;
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <Link 

@@ -2,8 +2,6 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',') || ['aissa.moustaine@gmail.com'];
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ message: 'Method not allowed' });
@@ -20,7 +18,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    const isAdmin = ADMIN_EMAILS.includes(session.user.email || '');
+    // Utiliser la variable d'environnement pour les emails admin
+    const adminEmails = process.env.ADMIN_EMAILS?.split(',') || [];
+    const isAdmin = adminEmails.includes(session.user.email || '');
     
     return res.status(200).json({ 
       isAdmin,
