@@ -1,4 +1,3 @@
-// pages/api/chatbot.ts
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
@@ -11,8 +10,8 @@ export async function POST(req: NextRequest) {
     // Vérifier l'authentification
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      return new Response(JSON.stringify({ error: 'Non autorisé' }), { 
-        status: 401 
+      return new Response(JSON.stringify({ error: 'Non autorisé' }), {
+        status: 401
       });
     }
 
@@ -28,8 +27,8 @@ export async function POST(req: NextRequest) {
 
     const botResponse = await flowiseResponse.json();
 
-    // Sauvegarder la question et la réponse
-    const { error: dbError } = await supabase
+    // Sauvegarder la question et la réponse dans l'historique
+    const { error: historyError } = await supabase
       .from('question_history')
       .insert({
         user_id: session.user.id,
@@ -38,28 +37,41 @@ export async function POST(req: NextRequest) {
         created_at: new Date().toISOString()
       });
 
-    if (dbError) throw dbError;
+    if (historyError) throw historyError;
+
+    // Récupérer le nombre actuel de questions
+    const { data: userData, error: fetchError } = await supabase
+      .from('Utilisateurs')
+      .select('questions_used')
+      .eq('id', session.user.id)
+      .single();
+
+    if (fetchError) throw fetchError;
 
     // Mettre à jour les statistiques utilisateur
-    const { error: userUpdateError } = await supabase
+    const newQuestionCount = (userData?.questions_used || 0) + 1;
+    const { error: updateError } = await supabase
       .from('Utilisateurs')
-      .update({ 
-        questions_used: supabase.sql`questions_used + 1`,
+      .update({
+        questions_used: newQuestionCount,
         last_question_date: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', session.user.id);
 
-    if (userUpdateError) throw userUpdateError;
+    if (updateError) throw updateError;
 
-    return new Response(JSON.stringify(botResponse), {
+    return new Response(JSON.stringify({ 
+      ...botResponse,
+      questionsUsed: newQuestionCount 
+    }), {
       headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
     console.error('Erreur:', error);
-    return new Response(JSON.stringify({ error: error.message }), { 
-      status: 500 
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500
     });
   }
 }
