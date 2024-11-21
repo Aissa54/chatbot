@@ -3,53 +3,60 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Récupérer les emails admin depuis les variables d'environnement
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',') || [];
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',') || ['aissa.moustaine@gmail.com'];
+
+// Routes publiques qui ne nécessitent pas d'authentification
+const PUBLIC_ROUTES = ['/login', '/signup', '/reset-password'];
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
   const { pathname } = req.nextUrl;
 
-  // Vérifier la session
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  try {
+    // Vérifier la session
+    const { data: { session } } = await supabase.auth.getSession();
 
-  // Debug logs
-  console.log({
-    pathname,
-    hasSession: !!session,
-    userEmail: session?.user?.email,
-    adminEmails: ADMIN_EMAILS,
-    isAdmin: session?.user?.email ? ADMIN_EMAILS.includes(session.user.email) : false
-  });
+    // Si c'est une route publique
+    if (PUBLIC_ROUTES.includes(pathname)) {
+      // Si déjà connecté, rediriger vers home
+      if (session) {
+        return NextResponse.redirect(new URL('/', req.url));
+      }
+      return res;
+    }
 
-  // Protection des routes admin
-  if (pathname.startsWith('/admin')) {
+    // Si pas de session, rediriger vers login
     if (!session) {
-      console.log('No session, redirecting to login');
       return NextResponse.redirect(new URL('/login', req.url));
     }
-    
-    if (!ADMIN_EMAILS.includes(session.user.email || '')) {
-      console.log('Not admin, redirecting to home');
-      return NextResponse.redirect(new URL('/', req.url));
+
+    // Vérification des routes admin
+    if (pathname.startsWith('/admin')) {
+      const isAdmin = ADMIN_EMAILS.includes(session.user.email || '');
+      if (!isAdmin) {
+        return NextResponse.redirect(new URL('/', req.url));
+      }
     }
-  }
 
-  // Autres routes protégées
-  if (!session && pathname !== '/login') {
-    return NextResponse.redirect(new URL('/login', req.url));
+    return res;
+    
+  } catch (error) {
+    // En cas d'erreur, rediriger vers login
+    console.error('Middleware error:', error);
+    if (!PUBLIC_ROUTES.includes(pathname)) {
+      return NextResponse.redirect(new URL('/login', req.url));
+    }
+    return res;
   }
-
-  if (session && pathname === '/login') {
-    return NextResponse.redirect(new URL('/', req.url));
-  }
-
-  return res;
 }
 
 export const config = {
-  matcher: ['/', '/login', '/admin/:path*']
+  matcher: [
+    '/',
+    '/login',
+    '/signup',
+    '/reset-password',
+    '/admin/:path*'
+  ]
 };

@@ -1,6 +1,5 @@
-// pages/index.tsx
 import type { NextPage } from 'next';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { 
@@ -20,29 +19,15 @@ import {
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Session } from '@supabase/supabase-js';
 
-interface Message {
-  id: string;
-  type: 'user' | 'bot';
-  content: string;
-  timestamp: Date;
-}
-
-interface ChatbotResponse {
-  text: string;
-  error?: string;
-}
-
-const suggestedQuestions = [
+const SUGGESTED_QUESTIONS = [
   "Quel est le prix d'une amende de classe 3 ?",
   "Quelles sont les obligations d'entretien ?"
-];
+] as const;
 
 const formatDate = (date: Date | string | number) => {
   try {
-    const dateObject = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObject.getTime())) {
-      throw new Error('Invalid Date');
-    }
+    const dateObject = new Date(date);
+    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
     return new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
       year: 'numeric',
@@ -57,10 +42,8 @@ const formatDate = (date: Date | string | number) => {
 
 const formatTime = (date: Date | string | number) => {
   try {
-    const dateObject = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObject.getTime())) {
-      throw new Error('Invalid Date');
-    }
+    const dateObject = new Date(date);
+    if (isNaN(dateObject.getTime())) throw new Error('Invalid Date');
     return new Intl.DateTimeFormat('fr-FR', {
       hour: '2-digit',
       minute: '2-digit'
@@ -72,6 +55,7 @@ const formatTime = (date: Date | string | number) => {
 };
 
 const Home: NextPage = () => {
+  // États
   const [session, setSession] = useState<Session | null>(null);
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -82,31 +66,31 @@ const Home: NextPage = () => {
   const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
   const [isClient, setIsClient] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
 
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Hooks
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  // Vérification de l'authentification
+  // Mémoisation des messages groupés
+  const groupedMessages = useMemo(() => {
+    return messages.reduce<{[key: string]: Message[]}>((groups, message) => {
+      const date = formatDate(message.timestamp);
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(message);
+      return groups;
+    }, {});
+  }, [messages]);
+
+  // Effet pour la vérification de l'authentification
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-    };
-    
-    checkSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
-  useEffect(() => {
-    const checkUser = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
         if (!session) {
           router.push('/login');
         }
@@ -115,15 +99,25 @@ const Home: NextPage = () => {
         router.push('/login');
       }
     };
-    checkUser();
+
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, [router, supabase.auth]);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  // Chargement des données sauvegardées
   useEffect(() => {
-    if (isClient) {
+    if (!isClient) return;
+
+    const loadSavedData = () => {
       const savedMessages = localStorage.getItem('chatHistory');
       const savedDarkMode = localStorage.getItem('darkMode');
       
@@ -131,10 +125,8 @@ const Home: NextPage = () => {
         try {
           const parsedMessages = JSON.parse(savedMessages);
           setMessages(parsedMessages.map((msg: any) => ({
-            id: msg.id || Date.now().toString(),
-            type: msg.type || 'user',
-            content: msg.content || '',
-            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+            ...msg,
+            timestamp: new Date(msg.timestamp)
           })));
           setShowSuggestions(parsedMessages.length === 0);
         } catch (e) {
@@ -147,43 +139,51 @@ const Home: NextPage = () => {
       if (savedDarkMode) {
         setDarkMode(savedDarkMode === 'true');
       }
-    }
+    };
+
+    loadSavedData();
   }, [isClient]);
 
+  // Sauvegarde des messages
   useEffect(() => {
-    if (isClient && messages.length > 0) {
-      const messagesForStorage = messages.map(msg => ({
-        ...msg,
-        timestamp: msg.timestamp.toISOString()
-      }));
-      localStorage.setItem('chatHistory', JSON.stringify(messagesForStorage));
-    }
+    if (!isClient || messages.length === 0) return;
+    
+    const messagesForStorage = messages.map(msg => ({
+      ...msg,
+      timestamp: msg.timestamp.toISOString()
+    }));
+    localStorage.setItem('chatHistory', JSON.stringify(messagesForStorage));
   }, [messages, isClient]);
 
+  // Gestion du mode sombre
   useEffect(() => {
-    if (isClient) {
-      localStorage.setItem('darkMode', darkMode.toString());
-      document.documentElement.classList.toggle('dark', darkMode);
-    }
+    if (!isClient) return;
+    
+    localStorage.setItem('darkMode', darkMode.toString());
+    document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode, isClient]);
 
+  // Configuration de la reconnaissance vocale
   useEffect(() => {
-    if (isClient && (window.SpeechRecognition || (window as any).webkitSpeechRecognition)) {
-      const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.lang = 'fr-FR';
-      
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setMessage(transcript);
-      };
+    if (!isClient) return;
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
-      recognitionRef.current.onerror = () => setIsListening(false);
-      recognitionRef.current.onend = () => setIsListening(false);
-    }
+    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current.continuous = false;
+    recognitionRef.current.lang = 'fr-FR';
+    
+    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setMessage(transcript);
+    };
+
+    recognitionRef.current.onerror = () => setIsListening(false);
+    recognitionRef.current.onend = () => setIsListening(false);
   }, [isClient]);
 
+  // Gestion de la soumission des messages
   const handleSubmit = useCallback(async (event: React.FormEvent | Event, suggestedMessage?: string) => {
     event.preventDefault();
     const messageToSend = suggestedMessage || message;
@@ -227,6 +227,7 @@ const Home: NextPage = () => {
     }
   }, [message]);
 
+  // Gestion des raccourcis clavier
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && message.trim()) {
@@ -242,6 +243,7 @@ const Home: NextPage = () => {
     }
   }, [message, isClient, handleSubmit]);
 
+  // Défilement automatique
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -250,18 +252,27 @@ const Home: NextPage = () => {
     if (messages.length > 0) scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Gestion de la reconnaissance vocale
   const toggleVoiceRecognition = () => {
     if (!recognitionRef.current) {
       alert("La reconnaissance vocale n'est pas supportée par votre navigateur");
       return;
     }
-    isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
+    
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+    }
     setIsListening(!isListening);
   };
 
-  const clearHistory = async () => {
+  // Gestion de l'historique
+  const clearHistory = () => {
     setMessages([]);
-    if (isClient) localStorage.removeItem('chatHistory');
+    if (isClient) {
+      localStorage.removeItem('chatHistory');
+    }
     setShowSuggestions(true);
   };
 
@@ -289,94 +300,80 @@ const Home: NextPage = () => {
     }
   };
 
+  // Rendu initial côté serveur
   if (!isClient) {
     return <div className="min-h-screen bg-gray-50"></div>;
   }
 
-  const groupMessagesByDate = (messages: Message[]) => {
-    return messages.reduce<{[key: string]: Message[]}>((groups, message) => {
-      const date = formatDate(message.timestamp);
-      if (!groups[date]) groups[date] = [];
-      groups[date].push(message);
-      return groups;
-    }, {});
-  };
-
-  const groupedMessages = groupMessagesByDate(messages);
-
+  // Le reste du JSX reste identique à votre code original
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
       {/* Header */}
-      {/* Header */}
-<header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
-  <div className="max-w-7xl mx-auto flex items-center justify-between">
-    <div className="flex items-center space-x-2 sm:space-x-4">
-      <Image
-        src="/images/logo.png"
-        alt="ColdBot Logo"
-        width={32}
-        height={32}
-        className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
-        priority
-      />
-      <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
-        ColdBot - Spécialiste du froid
-      </h1>
-    </div>
-    <div className="flex items-center space-x-1 sm:space-x-2">
-      <button
-        onClick={() => setIsSidebarOpen(true)}
-        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-        title="Voir l'historique"
-      >
-        <PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" />
-      </button>
-      <button
-        onClick={clearHistory}
-        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-        title="Effacer l'historique"
-      >
-        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-      </button>
-      <button
-        onClick={() => setDarkMode(!darkMode)}
-        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-        title="Changer le thème"
-      >
-        {darkMode ? (
-          <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
-        ) : (
-          <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
-        )}
-      </button>
-        console.log('=== DEBUG ADMIN BUTTON ===');
-        console.log('Session:', session);
-        console.log('User email:', session?.user?.email);
-        console.log('Should show admin button:', session?.user?.email === 'aissa.moustaine@gmail.com');
-        console.log('=========================');
-        {session?.user?.email === 'aissa.moustaine@gmail.com' && (
-        <button
-          onClick={() => router.push('/admin/history')}
-          className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-          title="Administration"
-        >
-          <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-        </button>
-      )}
-      <button
-        onClick={handleSignOut}
-        className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-        title="Se déconnecter"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-          <polyline points="16 17 21 12 16 7" />
-          <line x1="21" y1="12" x2="9" y2="12" />
-        </svg>
-      </button>
-    </div>
-  </div>
-</header>
+      <header className="bg-white dark:bg-gray-800 shadow-sm py-3 sm:py-4 px-3 sm:px-6 fixed w-full top-0 z-10">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <Image
+              src="/images/logo.png"
+              alt="ColdBot Logo"
+              width={32}
+              height={32}
+              className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
+              priority
+            />
+            <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-white truncate">
+              ColdBot - Spécialiste du froid
+            </h1>
+          </div>
+          <div className="flex items-center space-x-1 sm:space-x-2">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Voir l'historique"
+            >
+              <PanelLeftOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button
+              onClick={clearHistory}
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Effacer l'historique"
+            >
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Changer le thème"
+            >
+              {darkMode ? (
+                <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
+              ) : (
+                <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
+            </button>
+            {session?.user?.email === 'aissa.moustaine@gmail.com' && (
+              <button
+                onClick={() => router.push('/admin/history')}
+                className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                title="Administration"
+              >
+                <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Se déconnecter"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
       {/* Barre latérale */}
       <div 
         className={`fixed top-0 left-0 h-full bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 ease-in-out z-20 
@@ -456,7 +453,6 @@ const Home: NextPage = () => {
         />
       )}
 
-
       {/* Container principal responsif */}
       <div className="flex-1 max-w-7xl w-full mx-auto mt-16 sm:mt-20 mb-20 sm:mb-24 px-3 sm:px-4 md:px-6">
         <div className="space-y-4 py-4">
@@ -466,7 +462,7 @@ const Home: NextPage = () => {
                 <p className="text-sm sm:text-base">Comment puis-je vous aider aujourd'hui ?</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                {suggestedQuestions.map((question, index) => (
+                {SUGGESTED_QUESTIONS.map((question, index) => (
                   <button
                     key={index}
                     onClick={() => handleSuggestedQuestion(question)}
