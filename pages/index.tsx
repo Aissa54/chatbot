@@ -1,4 +1,3 @@
-import type { NextPage } from 'next';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
@@ -18,6 +17,13 @@ import {
 } from 'lucide-react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Session } from '@supabase/supabase-js';
+
+interface Message {
+  id: string;
+  type: 'user' | 'bot';
+  content: string;
+  timestamp: Date;
+}
 
 const SUGGESTED_QUESTIONS = [
   "Quel est le prix d'une amende de classe 3 ?",
@@ -54,8 +60,7 @@ const formatTime = (date: Date | string | number) => {
   }
 };
 
-const Home: NextPage = () => {
-  // États
+const Home = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -67,11 +72,9 @@ const Home: NextPage = () => {
   const [isClient, setIsClient] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
-  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Hooks
   const router = useRouter();
   const supabase = createClientComponentClient();
 
@@ -85,7 +88,7 @@ const Home: NextPage = () => {
     }, {});
   }, [messages]);
 
-  // Effet pour la vérification de l'authentification
+  // Vérification de l'authentification
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -166,24 +169,38 @@ const Home: NextPage = () => {
   // Configuration de la reconnaissance vocale
   useEffect(() => {
     if (!isClient) return;
-    
+
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) return;
-  
-    recognitionRef.current = new SpeechRecognitionAPI();
-    recognitionRef.current.continuous = false;
-    recognitionRef.current.lang = 'fr-FR';
-    
-    recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      setMessage(transcript);
-    };
-  
-    recognitionRef.current.onerror = () => setIsListening(false);
-    recognitionRef.current.onend = () => setIsListening(false);
+    if (!SpeechRecognitionAPI) {
+      console.warn('La reconnaissance vocale n\'est pas supportée sur ce navigateur');
+      return;
+    }
+
+    try {
+      recognitionRef.current = new SpeechRecognitionAPI();
+      if (recognitionRef.current) {
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.lang = 'fr-FR';
+
+        recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+          const transcript = event.results[0][0].transcript;
+          setMessage(transcript);
+        };
+
+        recognitionRef.current.onerror = () => {
+          setIsListening(false);
+          console.error('Erreur de reconnaissance vocale');
+        };
+
+        recognitionRef.current.onend = () => {
+          setIsListening(false);
+        };
+      }
+    } catch (error) {
+      console.error('Erreur lors de l\'initialisation de la reconnaissance vocale:', error);
+    }
   }, [isClient]);
 
-  // Gestion de la soumission des messages
   const handleSubmit = useCallback(async (event: React.FormEvent | Event, suggestedMessage?: string) => {
     event.preventDefault();
     const messageToSend = suggestedMessage || message;
@@ -227,7 +244,6 @@ const Home: NextPage = () => {
     }
   }, [message]);
 
-  // Gestion des raccourcis clavier
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey && message.trim()) {
@@ -243,7 +259,6 @@ const Home: NextPage = () => {
     }
   }, [message, isClient, handleSubmit]);
 
-  // Défilement automatique
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -252,22 +267,25 @@ const Home: NextPage = () => {
     if (messages.length > 0) scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Gestion de la reconnaissance vocale
   const toggleVoiceRecognition = () => {
-    if (!recognitionRef.current) {
-      alert("La reconnaissance vocale n'est pas supportée par votre navigateur");
-      return;
+    try {
+      if (!recognitionRef.current) {
+        alert("La reconnaissance vocale n'est pas supportée par votre navigateur");
+        return;
+      }
+
+      if (isListening) {
+        recognitionRef.current.stop();
+      } else {
+        recognitionRef.current.start();
+      }
+      setIsListening(!isListening);
+    } catch (error) {
+      console.error('Erreur lors du basculement de la reconnaissance vocale:', error);
+      setIsListening(false);
     }
-    
-    if (isListening) {
-      recognitionRef.current.stop();
-    } else {
-      recognitionRef.current.start();
-    }
-    setIsListening(!isListening);
   };
 
-  // Gestion de l'historique
   const clearHistory = () => {
     setMessages([]);
     if (isClient) {
@@ -300,7 +318,6 @@ const Home: NextPage = () => {
     }
   };
 
-  // Rendu initial côté serveur
   if (!isClient) {
     return <div className="min-h-screen bg-gray-50"></div>;
   }
