@@ -11,18 +11,19 @@ import {
   User
 } from 'lucide-react';
 
+interface User {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
 interface HistoryItem {
   id: number;
   user_id: string;
   question: string;
   answer: string;
   created_at: string;
-  users: {
-    id: string;
-    email: string;
-    name: string | null;
-  } | null;
-  user_email?: string;
+  users: User | null;
 }
 
 const HistoryPage = () => {
@@ -57,12 +58,8 @@ const HistoryPage = () => {
       const { data, error: historyError } = await supabase
         .from('question_history')
         .select(`
-          id,
-          user_id,
-          question,
-          answer,
-          created_at,
-          users (
+          *,
+          users:user_id (
             id,
             email,
             name
@@ -72,15 +69,10 @@ const HistoryPage = () => {
 
       if (historyError) throw historyError;
 
-      const formattedData = (data || []).map(item => ({
-        ...item,
-        user_email: item.users?.email || null
-      }));
-
-      setHistory(formattedData);
+      setHistory(data || []);
 
       // Extraire les emails uniques pour le filtre
-      const userEmails = formattedData
+      const userEmails = (data || [])
         .map(item => item.users?.email)
         .filter((email): email is string => Boolean(email));
       
