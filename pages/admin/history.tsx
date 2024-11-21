@@ -18,7 +18,7 @@ interface User {
 }
 
 interface HistoryItem {
-  id: number;
+  id: string;
   user_id: string;
   question: string;
   answer: string;
@@ -50,7 +50,11 @@ const HistoryPage = () => {
 
       // Vérifier si l'utilisateur est admin
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
+      console.log('Admin Emails:', adminEmails);
+      console.log('User Email:', session.user.email);
+      
       if (!adminEmails.includes(session.user.email || '')) {
+        console.log('Not admin, redirecting');
         router.push('/');
         return;
       }
@@ -90,7 +94,7 @@ const HistoryPage = () => {
     fetchData();
   }, [fetchData]);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cet élément ?')) return;
 
     try {
