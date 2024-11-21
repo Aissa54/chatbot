@@ -1,5 +1,24 @@
-// types.d.ts
 declare global {
+  // Interfaces pour les tables
+  interface User {
+    id: string;
+    email: string;
+    name?: string | null;
+    questions_used: number;
+    last_question_date?: string | null;
+    created_at: string;
+    updated_at: string;
+  }
+
+  interface QuestionHistory {
+    id?: string;
+    user_id: string;
+    question: string;
+    answer: string;
+    created_at: string;
+  }
+
+  // Speech Recognition types
   interface Window {
     SpeechRecognition: typeof SpeechRecognition;
     webkitSpeechRecognition: typeof SpeechRecognition;
@@ -26,22 +45,6 @@ declare global {
     start: () => void;
     stop: () => void;
     abort: () => void;
-  }
-
-  // Types pour l'historique
-  interface User {
-    id: string;
-    email: string;
-    name: string | null;
-  }
-
-  interface HistoryItem {
-    id: number;
-    user_id: string;
-    question: string;
-    answer: string;
-    created_at: string;
-    users: User | null;
   }
 
   interface ChatbotResponse {

@@ -1,25 +1,20 @@
-// middleware.ts
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',') || ['aissa.moustaine@gmail.com'];
-
-// Routes publiques qui ne nécessitent pas d'authentification
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',') || [];
 const PUBLIC_ROUTES = ['/login', '/signup', '/reset-password'];
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
-  const { pathname } = req.nextUrl;
 
   try {
-    // Vérifier la session
     const { data: { session } } = await supabase.auth.getSession();
+    const { pathname } = req.nextUrl;
 
     // Si c'est une route publique
     if (PUBLIC_ROUTES.includes(pathname)) {
-      // Si déjà connecté, rediriger vers home
       if (session) {
         return NextResponse.redirect(new URL('/', req.url));
       }
@@ -40,11 +35,10 @@ export async function middleware(req: NextRequest) {
     }
 
     return res;
-    
+
   } catch (error) {
-    // En cas d'erreur, rediriger vers login
     console.error('Middleware error:', error);
-    if (!PUBLIC_ROUTES.includes(pathname)) {
+    if (!PUBLIC_ROUTES.includes(req.nextUrl.pathname)) {
       return NextResponse.redirect(new URL('/login', req.url));
     }
     return res;
@@ -52,11 +46,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/',
-    '/login',
-    '/signup',
-    '/reset-password',
-    '/admin/:path*'
-  ]
+  matcher: ['/', '/login', '/signup', '/reset-password', '/admin/:path*']
 };
