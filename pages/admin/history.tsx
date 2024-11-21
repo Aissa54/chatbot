@@ -62,8 +62,12 @@ const HistoryPage = () => {
       const { data, error: historyError } = await supabase
         .from('question_history')
         .select(`
-          *,
-          users:user_id (
+          id,
+          user_id,
+          question,
+          answer,
+          created_at,
+          users (
             id,
             email,
             name
@@ -73,10 +77,15 @@ const HistoryPage = () => {
 
       if (historyError) throw historyError;
 
-      setHistory(data || []);
+      const formattedData = data?.map(item => ({
+        ...item,
+        users: item.users || null
+      })) || [];
+
+      setHistory(formattedData);
 
       // Extraire les emails uniques pour le filtre
-      const userEmails = (data || [])
+      const userEmails = formattedData
         .map(item => item.users?.email)
         .filter((email): email is string => Boolean(email));
       
