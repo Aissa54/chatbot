@@ -167,10 +167,10 @@ const Home: NextPage = () => {
   useEffect(() => {
     if (!isClient) return;
     
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    recognitionRef.current = new SpeechRecognition();
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) return;
+  
+    recognitionRef.current = new SpeechRecognitionAPI();
     recognitionRef.current.continuous = false;
     recognitionRef.current.lang = 'fr-FR';
     
@@ -178,7 +178,7 @@ const Home: NextPage = () => {
       const transcript = event.results[0][0].transcript;
       setMessage(transcript);
     };
-
+  
     recognitionRef.current.onerror = () => setIsListening(false);
     recognitionRef.current.onend = () => setIsListening(false);
   }, [isClient]);
