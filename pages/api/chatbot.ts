@@ -1,5 +1,4 @@
-// pages/api/chatbot.ts
-import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs';
+import { createPagesServerClient } from '@supabase/auth-helpers-nextjs';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -9,7 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // Créer le client Supabase
-    const supabase = createServerSupabaseClient({ req, res });
+    const supabase = createPagesServerClient({ req, res });
 
     // Vérifier l'authentification
     const {
@@ -44,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .insert({
         user_id: session.user.id,
         question: message,
-        repondre: botResponse.text,
+        answer: botResponse.text, // Changé de 'repondre' à 'answer'
         created_at: new Date().toISOString(),
       });
 
@@ -52,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Mettre à jour les stats utilisateur
     const { data: userData, error: fetchError } = await supabase
-      .from('Utilisateurs')
+      .from('users')
       .select('questions_used')
       .eq('id', session.user.id)
       .single();
@@ -60,9 +59,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (fetchError) throw fetchError;
 
     const newQuestionCount = (userData?.questions_used || 0) + 1;
-    
+
     const { error: updateError } = await supabase
-      .from('Utilisateurs')
+      .from('users')
       .update({
         questions_used: newQuestionCount,
         last_question_date: new Date().toISOString(),
