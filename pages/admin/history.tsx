@@ -15,10 +15,12 @@ interface HistoryItem {
   id: number;
   user_id: string;
   question: string;
-  repondre: string;
+  answer: string;
   created_at: string;
   users: {
+    id: string;
     email: string;
+    name: string | null;
   } | null;
   user_email?: string;
 }
@@ -52,32 +54,37 @@ const HistoryPage = () => {
         return;
       }
 
-      // Récupérer l'historique avec les emails des utilisateurs
       const { data, error: historyError } = await supabase
         .from('question_history')
         .select(`
           id,
           user_id,
           question,
-          repondre,
+          answer,
           created_at,
-          users(email)
+          users (
+            id,
+            email,
+            name
+          )
         `)
         .order('created_at', { ascending: false });
 
       if (historyError) throw historyError;
 
-      // Transformation des données pour inclure l'email de l'utilisateur
-      const formattedData = data?.map(item => ({
+      const formattedData = (data || []).map(item => ({
         ...item,
         user_email: item.users?.email || null
-      })) || [];
+      }));
 
       setHistory(formattedData);
 
       // Extraire les emails uniques pour le filtre
-      const emails = [...new Set(formattedData.map(item => item.user_email))].filter(Boolean) as string[];
-      setUniqueUsers(emails);
+      const userEmails = formattedData
+        .map(item => item.users?.email)
+        .filter((email): email is string => Boolean(email));
+      
+      setUniqueUsers([...new Set(userEmails)]);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
@@ -116,12 +123,12 @@ const HistoryPage = () => {
         ['Date', 'Utilisateur', 'Question', 'Réponse'],
         ...filteredData.map(item => [
           new Date(item.created_at).toLocaleString('fr-FR'),
-          item.user_email || 'Inconnu',
+          item.users?.email || 'Inconnu',
           item.question,
-          item.repondre
+          item.answer
         ])
       ]
-        .map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -141,12 +148,12 @@ const HistoryPage = () => {
     return history.filter(item => {
       const matchesSearch = searchTerm === '' || 
         item.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.repondre.toLowerCase().includes(searchTerm.toLowerCase());
+        item.answer.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesDateRange = (!startDate || new Date(item.created_at) >= new Date(startDate)) &&
         (!endDate || new Date(item.created_at) <= new Date(endDate));
 
-      const matchesUser = !userFilter || item.user_email === userFilter;
+      const matchesUser = !userFilter || item.users?.email === userFilter;
 
       return matchesSearch && matchesDateRange && matchesUser;
     });
@@ -303,7 +310,7 @@ const HistoryPage = () => {
                       {formatDate(item.created_at)}
                     </p>
                     <p className="text-sm text-blue-500">
-                      {item.user_email || 'Utilisateur inconnu'}
+                      {item.users?.email || 'Utilisateur inconnu'}
                     </p>
                   </div>
                   <button
@@ -328,7 +335,7 @@ const HistoryPage = () => {
                       Réponse:
                     </p>
                     <p className="text-gray-600 dark:text-gray-300">
-                      {item.repondre}
+                      {item.answer}
                     </p>
                   </div>
                 </div>
