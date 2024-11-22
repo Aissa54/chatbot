@@ -1,97 +1,137 @@
+// pages/api/chatbot.ts
 import { createPagesServerClient } from '@supabase/auth-helpers-nextjs';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { LRUCache } from 'lru-cache';
+
+// Types
+interface ChatResponse {
+  text: string;
+  error?: string;
+}
 
 interface User {
   id: string;
   email: string;
-  name?: string | null;
-  stripe_customer_id?: string | null;
   questions_used: number;
   last_question_date: string;
   created_at: string;
   updated_at: string;
 }
 
-interface QuestionHistory {
-  id?: string;
-  user_id: string;
-  question: string;
-  answer: string;
-  created_at: string;
-}
+// Configuration du cache pour le rate limiting
+const rateLimit = new LRUCache({
+  max: 500,
+  ttl: 60 * 1000, // 1 minute
+});
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+// Vérification du rate limit par utilisateur
+const checkRateLimit = (userId: string): boolean => {
+  const userRequests = rateLimit.get(userId) as number || 0;
+  if (userRequests >= 10) return false; // 10 requêtes par minute maximum
+  rateLimit.set(userId, userRequests + 1);
+  return true;
+};
+
+// Validation des variables d'environnement
+const validateEnv = () => {
+  const required = ['FLOWISE_API_KEY', 'FLOWISE_URL'];
+  const missing = required.filter(key => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing environment variables: ${missing.join(', ')}`);
+  }
+};
+
+// Fonction principale de l'API
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<ChatResponse>
+) {
+  // Vérification de la méthode HTTP
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ 
+      text: '',
+      error: 'Method not allowed' 
+    });
   }
 
   try {
-    const supabase = createPagesServerClient({ req, res });
-    const { data: { session } } = await supabase.auth.getSession();
+    // Validation des variables d'environnement
+    validateEnv();
 
-    if (!session) {
-      return res.status(401).json({ error: 'Non autorisé' });
+    // Initialisation de Supabase
+    const supabase = createPagesServerClient({ req, res });
+
+    // Vérification de la session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Unauthorized');
     }
 
-    const { message } = req.body;
+    // Vérification du rate limit
+    if (!checkRateLimit(session.user.id)) {
+      return res.status(429).json({
+        text: '',
+        error: 'Too many requests. Please try again later.'
+      });
+    }
 
-    // Vérifier/Créer l'utilisateur
+    // Validation du message
+    const { message } = req.body;
+    if (!message?.trim()) {
+      return res.status(400).json({
+        text: '',
+        error: 'Message is required'
+      });
+    }
+
+    // Mise à jour ou création de l'utilisateur
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*')
-      .eq('id', session.user.id)
+      .upsert({
+        id: session.user.id,
+        email: session.user.email,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'id'
+      })
+      .select('questions_used')
       .single();
 
-    if (userError && userError.code === 'PGRST116') {
-      // L'utilisateur n'existe pas, le créer
-      const newUser: Partial<User> = {
-        id: session.user.id,
-        email: session.user.email || '',
-        questions_used: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      const { error: createError } = await supabase
-        .from('users')
-        .insert(newUser);
-
-      if (createError) throw createError;
-    } else if (userError) {
-      throw userError;
+    if (userError) {
+      console.error('User upsert error:', userError);
+      throw new Error('Error updating user data');
     }
 
-    // Appel à Flowise
-    const flowiseResponse = await fetch(
-      'https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/62b0c11f-cd5f-497a-af9a-c28fa99fc9ba',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Basic ' + Buffer.from('COLDORG:Test_BOT*007!').toString('base64'),
-        },
-        body: JSON.stringify({ question: message }),
-      }
-    );
+    // Appel à l'API Flowise
+    const flowiseResponse = await fetch(process.env.FLOWISE_URL!, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.FLOWISE_API_KEY}`,
+      },
+      body: JSON.stringify({ question: message }),
+    });
+
+    if (!flowiseResponse.ok) {
+      throw new Error('Flowise API error');
+    }
 
     const botResponse = await flowiseResponse.json();
 
-    // Sauvegarder dans l'historique
-    const historyEntry: QuestionHistory = {
-      user_id: session.user.id,
-      question: message,
-      answer: botResponse.text,
-      created_at: new Date().toISOString()
-    };
+    // Enregistrement de l'interaction dans la base de données
+    const { error: historyError } = await supabase.rpc('handle_chat_interaction', {
+      p_user_id: session.user.id,
+      p_question: message,
+      p_answer: botResponse.text
+    });
 
-    const { error: historyError } = await supabase
-      .from('question_history')
-      .insert(historyEntry);
+    if (historyError) {
+      console.error('History error:', historyError);
+      // On continue malgré l'erreur d'historique pour ne pas bloquer la réponse
+    }
 
-    if (historyError) throw historyError;
-
-    // Mettre à jour les statistiques de l'utilisateur
-    const { error: updateError } = await supabase
+    // Mise à jour des statistiques utilisateur
+    const { error: statsError } = await supabase
       .from('users')
       .update({
         questions_used: (user?.questions_used || 0) + 1,
@@ -100,14 +140,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       .eq('id', session.user.id);
 
-    if (updateError) throw updateError;
+    if (statsError) {
+      console.error('Stats update error:', statsError);
+      // On continue malgré l'erreur de stats pour ne pas bloquer la réponse
+    }
 
-    return res.status(200).json(botResponse);
+    // Envoi de la réponse
+    return res.status(200).json({
+      text: botResponse.text
+    });
 
   } catch (error) {
-    console.error('Erreur:', error);
+    console.error('Chatbot error:', error);
+    
+    // Gestion des erreurs spécifiques
+    if (error instanceof Error) {
+      if (error.message === 'Unauthorized') {
+        return res.status(401).json({
+          text: '',
+          error: 'Please log in to continue'
+        });
+      }
+      
+      if (error.message.includes('Missing environment')) {
+        return res.status(500).json({
+          text: '',
+          error: 'Server configuration error'
+        });
+      }
+    }
+
+    // Erreur générique
     return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Une erreur est survenue',
+      text: '',
+      error: 'An unexpected error occurred. Please try again later.'
     });
   }
 }
