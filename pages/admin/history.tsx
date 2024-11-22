@@ -4,6 +4,8 @@ import { useRouter } from 'next/router';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ArrowLeft, Download, Search, Calendar, Users, Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { useHistoryManager } from '../../hooks/useHistoryManager';
+import { Dashboard } from '../../components/admin/Dashboard';
 
 // Types
 interface User {
@@ -20,11 +22,6 @@ interface HistoryEntry {
   user?: User;
 }
 
-interface DateRange {
-  startDate: string;
-  endDate: string;
-}
-
 const History = () => {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,57 +30,37 @@ const History = () => {
   const [endDate, setEndDate] = useState('');
   const [showAllUsers, setShowAllUsers] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
+  const [showDashboard, setShowDashboard] = useState(true);
 
   const router = useRouter();
   const supabase = createClientComponentClient();
+  const { getHistory } = useHistoryManager();
 
   useEffect(() => {
-    loadHistory();
-  }, [searchQuery, startDate, endDate, showAllUsers]);
+    handleSearch();
+  }, [showAllUsers]); // Recharge quand on change le filtre utilisateurs
 
-  async function loadHistory() {
+  const handleSearch = async () => {
     try {
       setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
       
-      let query = supabase
-        .from('question_history')
-        .select(`
-          *,
-          user:users(id, email)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (!showAllUsers) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          query = query.eq('user_id', session.user.id);
-        }
-      }
-
-      // Appliquer les filtres de date
-      if (startDate) {
-        query = query.gte('created_at', startDate);
-      }
-      if (endDate) {
-        query = query.lte('created_at', `${endDate}T23:59:59`);
-      }
-
-      // Appliquer le filtre de recherche
-      if (searchQuery) {
-        query = query.or(`question.ilike.%${searchQuery}%,answer.ilike.%${searchQuery}%`);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setEntries(data || []);
+      const filters = {
+        startDate: startDate || undefined,
+        endDate: endDate ? `${endDate}T23:59:59` : undefined,
+        searchQuery: searchQuery || undefined,
+        userId: showAllUsers ? undefined : session?.user?.id
+      };
+      
+      const historyData = await getHistory(filters);
+      setEntries(historyData || []);
     } catch (error) {
-      console.error('Error loading history:', error);
-      alert('Erreur lors du chargement de l\'historique');
+      console.error('Error searching history:', error);
+      alert('Erreur lors de la recherche dans l\'historique');
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   const formatDate = (dateString: string) => {
     try {
@@ -113,7 +90,7 @@ const History = () => {
         if (error) throw error;
         
         setSelectedEntries([]);
-        loadHistory();
+        handleSearch(); // Recharger l'historique après suppression
       } catch (error) {
         console.error('Error deleting entries:', error);
         alert('Erreur lors de la suppression des entrées');
@@ -135,7 +112,6 @@ const History = () => {
         .map(row => row.map(cell => `"${cell}"`).join(','))
         .join('\n');
 
-      // Créer et télécharger le fichier
       const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -183,6 +159,16 @@ const History = () => {
           </div>
           <div className="flex items-center space-x-2">
             <button
+              onClick={() => setShowDashboard(!showDashboard)}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                showDashboard 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+              }`}
+            >
+              {showDashboard ? 'Masquer statistiques' : 'Afficher statistiques'}
+            </button>
+            <button
               onClick={exportToCsv}
               className="inline-flex items-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
             >
@@ -196,6 +182,9 @@ const History = () => {
       {/* Main content */}
       <main className="pt-24 pb-8 px-6">
         <div className="max-w-7xl mx-auto">
+          {/* Dashboard */}
+          {showDashboard && <Dashboard />}
+
           {/* Filtres */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -247,6 +236,16 @@ const History = () => {
                   {showAllUsers ? 'Tous les utilisateurs' : 'Mes conversations'}
                 </button>
               </div>
+            </div>
+
+            {/* Bouton de recherche */}
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={handleSearch}
+                className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Rechercher
+              </button>
             </div>
           </div>
 
