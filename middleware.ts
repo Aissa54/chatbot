@@ -1,13 +1,67 @@
+// middleware.ts
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { LRUCache } from 'lru-cache';
+
+// Configuration du Rate Limiting
+const ratelimit = new LRUCache({
+  max: 500,
+  ttl: 60000, // 1 minute
+});
+
+async function checkRateLimit(req: NextRequest): Promise<boolean> {
+  const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+  const tokenKey = `${ip}-${req.nextUrl.pathname}`;
+  const tokenCount = (ratelimit.get(tokenKey) as number) || 0;
+
+  if (tokenCount >= 10) { // 10 requêtes par minute
+    return false;
+  }
+
+  ratelimit.set(tokenKey, tokenCount + 1);
+  return true;
+}
+
+// Routes publiques qui ne nécessitent pas d'authentification
+const publicRoutes = [
+  '/login',
+  '/auth/callback',
+  '/auth/confirm',
+  '/_next',
+  '/api/auth',
+  '/favicon.ico',
+];
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
   const pathname = req.nextUrl.pathname;
 
+  // Vérifier si c'est une route publique
+  if (publicRoutes.some(route => pathname.startsWith(route))) {
+    return res;
+  }
+
   try {
+    // Vérification du rate limit pour les routes API
+    if (pathname.startsWith('/api')) {
+      const rateLimitOk = await checkRateLimit(req);
+      if (!rateLimitOk) {
+        return new NextResponse(
+          JSON.stringify({ error: 'Too many requests' }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'Retry-After': '60'
+            }
+          }
+        );
+      }
+    }
+
+    // Vérification de la session
     const { data: { session }, error } = await supabase.auth.getSession();
     
     if (error) {
@@ -15,22 +69,18 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
-    // Route de déconnexion
-    if (pathname === '/api/auth/signout') {
-      return res;
-    }
-
-    // Routes publiques
-    if (pathname === '/login') {
-      if (session) {
-        return NextResponse.redirect(new URL('/', req.url));
-      }
-      return res;
+    // Gérer la redirection de la page login
+    if (pathname === '/login' && session) {
+      return NextResponse.redirect(new URL('/', req.url));
     }
 
     // Protection des routes authentifiées
     if (!session) {
-      console.log('No session, redirecting to login');
+      // Permettre les assets statiques et autres ressources publiques
+      if (pathname.startsWith('/_next') || pathname.startsWith('/public')) {
+        return res;
+      }
+      
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
@@ -39,30 +89,27 @@ export async function middleware(req: NextRequest) {
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
       const userEmail = session.user?.email;
 
-      console.log({
-        type: 'Admin Access Check',
-        pathname,
-        adminEmails,
-        userEmail,
-        hasAccess: userEmail ? adminEmails.includes(userEmail) : false
-      });
-
       if (!userEmail || !adminEmails.includes(userEmail)) {
-        console.log('Admin access denied for:', userEmail);
+        console.warn('Admin access denied for:', userEmail);
         return NextResponse.redirect(new URL('/', req.url));
       }
-
-      console.log('Admin access granted for:', userEmail);
     }
 
-    return res;
+    // Ajouter des en-têtes de sécurité supplémentaires
+    const response = NextResponse.next();
+    response.headers.set('X-Frame-Options', 'DENY');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    response.headers.set(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+    );
+
+    return response;
 
   } catch (error) {
     console.error('Middleware error:', error);
-    if (pathname !== '/login') {
-      return NextResponse.redirect(new URL('/login', req.url));
-    }
-    return res;
+    return NextResponse.redirect(new URL('/login', req.url));
   }
 }
 
@@ -70,12 +117,10 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
-     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|public/).*)'
-  ]
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
 };

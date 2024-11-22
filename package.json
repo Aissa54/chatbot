@@ -12,9 +12,12 @@
     "@supabase/auth-helpers-nextjs": "^0.8.7",
     "@supabase/auth-helpers-react": "^0.4.2",
     "@supabase/supabase-js": "^2.39.3",
+    "@types/react-datepicker": "^7.0.0",
+    "lru-cache": "^10.4.3",
     "lucide-react": "^0.453.0",
     "next": "14.2.15",
     "react": "^18",
+    "react-datepicker": "^7.5.0",
     "react-dom": "^18",
     "react-google-recaptcha": "^3.1.0",
     "recharts": "^2.13.3"

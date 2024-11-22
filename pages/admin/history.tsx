@@ -1,365 +1,335 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+// pages/admin/history.tsx
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { 
-  Loader2, 
-  ArrowLeft, 
-  Trash2, 
-  Download,
-  Search,
-  Calendar,
-  User
-} from 'lucide-react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { ArrowLeft, Download, Search, Calendar, Users, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 
+// Types
 interface User {
   id: string;
-  email: string | null;
-  name: string | null;
+  email: string;
 }
 
-interface HistoryItem {
+interface HistoryEntry {
   id: string;
   user_id: string;
   question: string;
   answer: string;
   created_at: string;
-  users: {
-    id: string;
-    email: string | null;
-    name: string | null;
-  } | null;
+  user?: User;
 }
 
-const HistoryPage = () => {
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+interface DateRange {
+  startDate: string;
+  endDate: string;
+}
+
+const History = () => {
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [userFilter, setUserFilter] = useState('');
-  const [uniqueUsers, setUniqueUsers] = useState<string[]>([]);
+  const [showAllUsers, setShowAllUsers] = useState(false);
+  const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
 
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    loadHistory();
+  }, [searchQuery, startDate, endDate, showAllUsers]);
+
+  async function loadHistory() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      setLoading(true);
       
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
-      console.log('Admin Emails:', adminEmails);
-      console.log('User Email:', session.user.email);
-      
-      if (!adminEmails.includes(session.user.email || '')) {
-        console.log('Not admin, redirecting');
-        router.push('/');
-        return;
-      }
-
-      const { data, error: historyError } = await supabase
+      let query = supabase
         .from('question_history')
         .select(`
-          id,
-          user_id,
-          question,
-          answer,
-          created_at,
-          users:user_id (
-            id,
-            email
-          )
+          *,
+          user:users(id, email)
         `)
         .order('created_at', { ascending: false });
 
-      if (historyError) throw historyError;
+      if (!showAllUsers) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          query = query.eq('user_id', session.user.id);
+        }
+      }
 
-      const formattedData: HistoryItem[] = (data || []).map(item => ({
-        id: item.id,
-        user_id: item.user_id,
-        question: item.question,
-        answer: item.answer,
-        created_at: item.created_at,
-        users: item.users ? {
-          id: item.users.id,
-          email: item.users.email || null,
-          name: null
-        } : null
-      }));
+      // Appliquer les filtres de date
+      if (startDate) {
+        query = query.gte('created_at', startDate);
+      }
+      if (endDate) {
+        query = query.lte('created_at', `${endDate}T23:59:59`);
+      }
 
-      setHistory(formattedData);
+      // Appliquer le filtre de recherche
+      if (searchQuery) {
+        query = query.or(`question.ilike.%${searchQuery}%,answer.ilike.%${searchQuery}%`);
+      }
 
-      const userEmails = formattedData
-        .map(item => item.users?.email)
-        .filter((email): email is string => Boolean(email));
-      
-      setUniqueUsers([...new Set(userEmails)]);
+      const { data, error } = await query;
 
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
-      console.error('Erreur lors de la récupération de l\'historique:', err);
+      if (error) throw error;
+      setEntries(data || []);
+    } catch (error) {
+      console.error('Error loading history:', error);
+      alert('Erreur lors du chargement de l\'historique');
     } finally {
       setLoading(false);
     }
-  }, [router, supabase]);
+  }
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cet élément ?')) return;
-
+  const formatDate = (dateString: string) => {
     try {
-      const { error } = await supabase
-        .from('question_history')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setHistory(prev => prev.filter(item => item.id !== id));
-    } catch (err) {
-      console.error('Erreur lors de la suppression:', err);
-      alert('Erreur lors de la suppression');
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    } catch (e) {
+      return dateString;
     }
   };
 
-  const handleExport = () => {
+  const handleDeleteEntries = async () => {
+    if (!selectedEntries.length) return;
+    
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer les entrées sélectionnées ?')) {
+      try {
+        const { error } = await supabase
+          .from('question_history')
+          .delete()
+          .in('id', selectedEntries);
+
+        if (error) throw error;
+        
+        setSelectedEntries([]);
+        loadHistory();
+      } catch (error) {
+        console.error('Error deleting entries:', error);
+        alert('Erreur lors de la suppression des entrées');
+      }
+    }
+  };
+
+  const exportToCsv = () => {
     try {
-      const filteredData = filterHistory();
       const csv = [
-        ['Date', 'Utilisateur', 'Question', 'Réponse'],
-        ...filteredData.map(item => [
-          new Date(item.created_at).toLocaleString('fr-FR'),
-          item.users?.email || 'Inconnu',
-          item.question,
-          item.answer
+        ['Date', 'Email', 'Question', 'Réponse'], // En-têtes
+        ...entries.map(entry => [
+          formatDate(entry.created_at),
+          entry.user?.email || '',
+          entry.question.replace(/"/g, '""'), // Échapper les guillemets
+          entry.answer.replace(/"/g, '""')
         ])
       ]
-        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .map(row => row.map(cell => `"${cell}"`).join(','))
         .join('\n');
 
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      // Créer et télécharger le fichier
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `historique_${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `historique-conversations-${new Date().toISOString().split('T')[0]}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (err) {
-      console.error('Erreur lors de l\'export:', err);
-      alert('Erreur lors de l\'export');
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      alert('Erreur lors de l\'export CSV');
     }
   };
 
-  const filterHistory = () => {
-    return history.filter(item => {
-      const matchesSearch = searchTerm === '' || 
-        item.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.answer.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesDateRange = (!startDate || new Date(item.created_at) >= new Date(startDate)) &&
-        (!endDate || new Date(item.created_at) <= new Date(endDate));
-
-      const matchesUser = !userFilter || item.users?.email === userFilter;
-
-      return matchesSearch && matchesDateRange && matchesUser;
-    });
+  const handleSelectEntry = (id: string) => {
+    setSelectedEntries(prev =>
+      prev.includes(id)
+        ? prev.filter(entryId => entryId !== id)
+        : [...prev, id]
+    );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('fr-FR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const handleSelectAll = () => {
+    if (selectedEntries.length === entries.length) {
+      setSelectedEntries([]);
+    } else {
+      setSelectedEntries(entries.map(entry => entry.id));
+    }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <p className="text-red-500 mb-4">{error}</p>
-        <button
-          onClick={() => router.push('/')}
-          className="flex items-center space-x-2 text-blue-500 hover:text-blue-600"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Retour à l'accueil</span>
-        </button>
-      </div>
-    );
-  }
-
-  const filteredHistory = filterHistory();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* En-tête */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
-          <div className="flex items-center mb-4 sm:mb-0">
-            <button
-              onClick={() => router.push('/')}
-              className="mr-4 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm py-4 px-6 fixed w-full top-0 z-10">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Link 
+              href="/"
+              className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </button>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <ArrowLeft className="w-6 h-6" />
+            </Link>
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
               Historique des conversations
             </h1>
           </div>
-          <button
-            onClick={handleExport}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg 
-                     hover:bg-blue-600 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            <span>Exporter CSV</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={exportToCsv}
+              className="inline-flex items-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Exporter CSV
+            </button>
+          </div>
         </div>
+      </header>
 
-        {/* Filtres */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6 space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Recherche */}
-            <div className="flex-1">
+      {/* Main content */}
+      <main className="pt-24 pb-8 px-6">
+        <div className="max-w-7xl mx-auto">
+          {/* Filtres */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Recherche */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="text"
                   placeholder="Rechercher..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 
-                           dark:text-white transition-colors"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
-            </div>
 
-            {/* Filtre par utilisateur */}
-            <div className="sm:w-64">
+              {/* Date début */}
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <select
-                  value={userFilter}
-                  onChange={(e) => setUserFilter(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 
-                           dark:text-white transition-colors appearance-none"
-                >
-                  <option value="">Tous les utilisateurs</option>
-                  {uniqueUsers.map((email) => (
-                    <option key={email} value={email}>
-                      {email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Filtres de date */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 
-                           dark:text-white transition-colors"
+                  className="w-full pl-10 pr-4 py-2 border dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
-            </div>
-            <div className="flex-1">
+
+              {/* Date fin */}
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 
-                           dark:text-white transition-colors"
+                  className="w-full pl-10 pr-4 py-2 border dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 />
+              </div>
+
+              {/* Tous les utilisateurs */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => setShowAllUsers(!showAllUsers)}
+                  className={`flex items-center px-4 py-2 rounded-lg border dark:border-gray-600 w-full ${
+                    showAllUsers 
+                      ? 'bg-blue-500 text-white border-blue-500' 
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200'
+                  }`}
+                >
+                  <Users className="w-5 h-5 mr-2" />
+                  {showAllUsers ? 'Tous les utilisateurs' : 'Mes conversations'}
+                </button>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Liste des conversations */}
-        <div className="space-y-4">
-          {filteredHistory.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 text-center">
+          {/* Actions en masse */}
+          {selectedEntries.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6 flex justify-between items-center">
+              <span className="text-sm text-gray-600 dark:text-gray-300">
+                {selectedEntries.length} élément(s) sélectionné(s)
+              </span>
+              <button
+                onClick={handleDeleteEntries}
+                className="inline-flex items-center px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer
+              </button>
+            </div>
+          )}
+
+          {/* Liste des conversations */}
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="text-center py-12">
               <p className="text-gray-500 dark:text-gray-400">Aucune conversation trouvée</p>
             </div>
           ) : (
-            filteredHistory.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-3"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(item.created_at)}
-                    </p>
-                    <p className="text-sm text-blue-500">
-                      {item.users?.email || 'Utilisateur inconnu'}
-                    </p>
+            <div className="space-y-4">
+              {entries.map((entry) => (
+                <div 
+                  key={entry.id}
+                  className={`bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-all ${
+                    selectedEntries.includes(entry.id)
+                      ? 'ring-2 ring-blue-500'
+                      : ''
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-start space-x-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedEntries.includes(entry.id)}
+                        onChange={() => handleSelectEntry(entry.id)}
+                        className="mt-1"
+                      />
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(entry.created_at)}
+                        </p>
+                        <p className="text-sm text-blue-500">
+                          {entry.user?.email}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-1 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-full transition-colors"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                  </button>
+                  <div className="ml-8">
+                    <div className="mb-3">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                        Question:
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-300 pl-4">
+                        {entry.question}
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                        Réponse:
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-300 pl-4">
+                        {entry.answer}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded p-3">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      Question:
-                    </p>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {item.question}
-                    </p>
-                  </div>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded p-3">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      Réponse:
-                    </p>
-                    <p className="text-gray-600 dark:text-gray-300">
-                      {item.answer}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };
 
-export default HistoryPage;
+export default History;
