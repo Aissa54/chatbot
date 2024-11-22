@@ -11,10 +11,22 @@ import {
   User
 } from 'lucide-react';
 
-interface User {
+interface PostgrestUser {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
+  raw_user_meta_data?: {
+    name: string | null;
+  } | null;
+}
+
+interface PostgrestHistoryItem {
+  id: string;
+  user_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  users: PostgrestUser | null;
 }
 
 interface HistoryItem {
@@ -23,7 +35,11 @@ interface HistoryItem {
   question: string;
   answer: string;
   created_at: string;
-  users: User | null;
+  users: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  } | null;
 }
 
 const HistoryPage = () => {
@@ -48,7 +64,6 @@ const HistoryPage = () => {
         return;
       }
 
-      // Vérifier si l'utilisateur est admin
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
       console.log('Admin Emails:', adminEmails);
       console.log('User Email:', session.user.email);
@@ -67,24 +82,32 @@ const HistoryPage = () => {
           question,
           answer,
           created_at,
-          users (
+          users:user_id(
             id,
             email,
-            name
+            raw_user_meta_data
           )
         `)
+        .returns<PostgrestHistoryItem[]>()
         .order('created_at', { ascending: false });
 
       if (historyError) throw historyError;
 
-      const formattedData = data?.map(item => ({
-        ...item,
-        users: item.users || null
-      })) || [];
+      const formattedData: HistoryItem[] = (data || []).map(item => ({
+        id: item.id,
+        user_id: item.user_id,
+        question: item.question,
+        answer: item.answer,
+        created_at: item.created_at,
+        users: item.users ? {
+          id: item.users.id,
+          email: item.users.email,
+          name: item.users.raw_user_meta_data?.name || null
+        } : null
+      }));
 
       setHistory(formattedData);
 
-      // Extraire les emails uniques pour le filtre
       const userEmails = formattedData
         .map(item => item.users?.email)
         .filter((email): email is string => Boolean(email));
