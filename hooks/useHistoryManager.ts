@@ -19,7 +19,6 @@ export const useHistoryManager = () => {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<HistoryStats | null>(null);
 
-  // Récupérer l'historique avec filtres
   const getHistory = async (filters: {
     startDate?: string;
     endDate?: string;
@@ -31,7 +30,10 @@ export const useHistoryManager = () => {
         .from('question_history')
         .select(`
           *,
-          user:users(email)
+          user:users (
+            id,
+            email
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -39,18 +41,22 @@ export const useHistoryManager = () => {
         query = query.gte('created_at', filters.startDate);
       }
       if (filters.endDate) {
-        query = query.lte('created_at', filters.endDate);
+        query = query.lte('created_at', `${filters.endDate}T23:59:59`);
       }
       if (filters.searchQuery) {
         query = query.or(`question.ilike.%${filters.searchQuery}%,answer.ilike.%${filters.searchQuery}%`);
       }
+      // Ne filtrer par utilisateur que si un ID est spécifié
       if (filters.userId) {
         query = query.eq('user_id', filters.userId);
       }
 
       const { data, error } = await query;
-      if (error) throw error;
-      
+
+      if (error) {
+        throw error;
+      }
+
       return data;
     } catch (error) {
       console.error('Error fetching history:', error);
@@ -58,49 +64,41 @@ export const useHistoryManager = () => {
     }
   };
 
-  // Calculer les statistiques
   const calculateStats = async (userId?: string) => {
     try {
       setLoading(true);
       
-      // Total des questions
-      const { count: totalQuestions } = await supabase
+      let query = supabase
         .from('question_history')
-        .select('*', { count: 'exact' })
-        .eq(userId ? 'user_id' : 'id', userId || 'id');
+        .select('*', { count: 'exact' });
 
-      // Questions par jour
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { count: totalQuestions } = await query;
+
       const { data: dailyStats } = await supabase
         .from('question_history')
         .select('created_at')
-        .eq(userId ? 'user_id' : 'id', userId || 'id')
         .order('created_at', { ascending: false });
 
-      // Questions fréquentes
-      const { data: topQuestions } = await supabase
-        .from('question_history')
-        .select('question')
-        .eq(userId ? 'user_id' : 'id', userId || 'id')
-        .order('created_at', { ascending: false });
-
-      // Calculer les statistiques
-      const questionCounts = topQuestions?.reduce((acc: Record<string, number>, curr) => {
-        acc[curr.question] = (acc[curr.question] || 0) + 1;
-        return acc;
-      }, {});
-
-      const sortedQuestions = Object.entries(questionCounts || {})
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([question, count]) => ({ question, count }));
+      let questionCounts: Record<string, number> = {};
+      if (dailyStats) {
+        dailyStats.forEach(entry => {
+          const date = new Date(entry.created_at).toLocaleDateString();
+          questionCounts[date] = (questionCounts[date] || 0) + 1;
+        });
+      }
 
       const stats: HistoryStats = {
         totalQuestions: totalQuestions || 0,
         averageQuestionsPerDay: totalQuestions 
-          ? totalQuestions / (dailyStats?.length || 1) 
+          ? totalQuestions / Object.keys(questionCounts).length 
           : 0,
-        mostActiveDay: dailyStats?.[0]?.created_at || '',
-        topQuestions: sortedQuestions
+        mostActiveDay: Object.entries(questionCounts)
+          .sort(([,a], [,b]) => b - a)[0]?.[0] || '',
+        topQuestions: []  // À implémenter si nécessaire
       };
 
       setStats(stats);
