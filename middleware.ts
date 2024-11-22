@@ -3,19 +3,26 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export async function middleware(req: NextRequest) {
-  // Créer le client Supabase
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
   const pathname = req.nextUrl.pathname;
 
   try {
-    // Vérifier la session
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error) {
+      console.error('Middleware auth error:', error);
+      return NextResponse.redirect(new URL('/login', req.url));
+    }
 
-    // Routes publiques qui ne nécessitent pas d'authentification
+    // Route de déconnexion
+    if (pathname === '/api/auth/signout') {
+      return res;
+    }
+
+    // Routes publiques
     if (pathname === '/login') {
       if (session) {
-        // Si déjà connecté, rediriger vers l'accueil
         return NextResponse.redirect(new URL('/', req.url));
       }
       return res;
@@ -27,7 +34,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
-    // Vérification spécifique pour les routes admin
+    // Vérification des routes admin
     if (pathname.startsWith('/admin')) {
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
       const userEmail = session.user?.email;
@@ -48,12 +55,10 @@ export async function middleware(req: NextRequest) {
       console.log('Admin access granted for:', userEmail);
     }
 
-    // Continuer la requête
     return res;
 
   } catch (error) {
     console.error('Middleware error:', error);
-    // En cas d'erreur, rediriger vers login
     if (pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', req.url));
     }

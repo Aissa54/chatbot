@@ -11,22 +11,10 @@ import {
   User
 } from 'lucide-react';
 
-interface PostgrestUser {
+interface User {
   id: string;
   email: string | null;
   name: string | null;
-  raw_user_meta_data?: {
-    name: string | null;
-  } | null;
-}
-
-interface PostgrestHistoryItem {
-  id: string;
-  user_id: string;
-  question: string;
-  answer: string;
-  created_at: string;
-  users: PostgrestUser | null;
 }
 
 interface HistoryItem {
@@ -82,13 +70,11 @@ const HistoryPage = () => {
           question,
           answer,
           created_at,
-          users:user_id(
+          users:user_id (
             id,
-            email,
-            raw_user_meta_data
+            email
           )
         `)
-        .returns<PostgrestHistoryItem[]>()
         .order('created_at', { ascending: false });
 
       if (historyError) throw historyError;
@@ -101,8 +87,8 @@ const HistoryPage = () => {
         created_at: item.created_at,
         users: item.users ? {
           id: item.users.id,
-          email: item.users.email,
-          name: item.users.raw_user_meta_data?.name || null
+          email: item.users.email || null,
+          name: null
         } : null
       }));
 
