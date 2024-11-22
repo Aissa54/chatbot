@@ -2,103 +2,84 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { LRUCache } from 'lru-cache';
 
-// Configuration du Rate Limiting
-const ratelimit = new LRUCache({
-  max: 500,
-  ttl: 60000, // 1 minute
-});
-
-async function checkRateLimit(req: NextRequest): Promise<boolean> {
-  const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-  const tokenKey = `${ip}-${req.nextUrl.pathname}`;
-  const tokenCount = (ratelimit.get(tokenKey) as number) || 0;
-
-  if (tokenCount >= 10) { // 10 requêtes par minute
-    return false;
-  }
-
-  ratelimit.set(tokenKey, tokenCount + 1);
-  return true;
-}
-
-// Routes publiques qui ne nécessitent pas d'authentification
+// Configuration
 const publicRoutes = [
   '/login',
   '/auth/callback',
   '/auth/confirm',
-  '/_next',
-  '/api/auth',
-  '/favicon.ico',
+  '/auth/reset-password'
 ];
 
+const publicPaths = [
+  '/_next',
+  '/images',
+  '/api/auth',
+  '/favicon.ico'
+];
+
+const isPublicPath = (path: string): boolean => {
+  return publicPaths.some(publicPath => path.startsWith(publicPath));
+};
+
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
-  const pathname = req.nextUrl.pathname;
-
-  // Vérifier si c'est une route publique
-  if (publicRoutes.some(route => pathname.startsWith(route))) {
-    return res;
-  }
-
   try {
-    // Vérification du rate limit pour les routes API
-    if (pathname.startsWith('/api')) {
-      const rateLimitOk = await checkRateLimit(req);
-      if (!rateLimitOk) {
-        return new NextResponse(
-          JSON.stringify({ error: 'Too many requests' }),
-          {
-            status: 429,
-            headers: {
-              'Content-Type': 'application/json',
-              'Retry-After': '60'
-            }
-          }
-        );
-      }
+    // Ignorer les ressources statiques et les routes publiques
+    const path = req.nextUrl.pathname;
+    if (isPublicPath(path)) {
+      return NextResponse.next();
     }
+
+    // Initialisation de la réponse et du client Supabase
+    const res = NextResponse.next();
+    const supabase = createMiddlewareClient({ req, res });
 
     // Vérification de la session
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
-    if (error) {
-      console.error('Middleware auth error:', error);
-      return NextResponse.redirect(new URL('/login', req.url));
+    const {
+      data: { session },
+      error: sessionError
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error('Session error:', sessionError);
+      throw sessionError;
     }
 
-    // Gérer la redirection de la page login
-    if (pathname === '/login' && session) {
-      return NextResponse.redirect(new URL('/', req.url));
-    }
-
-    // Protection des routes authentifiées
-    if (!session) {
-      // Permettre les assets statiques et autres ressources publiques
-      if (pathname.startsWith('/_next') || pathname.startsWith('/public')) {
-        return res;
+    // Gestion des routes publiques
+    if (publicRoutes.includes(path)) {
+      if (session) {
+        // Rediriger vers l'accueil si déjà connecté
+        return NextResponse.redirect(new URL('/', req.url));
       }
-      
-      return NextResponse.redirect(new URL('/login', req.url));
+      return res;
+    }
+
+    // Vérification de l'authentification
+    if (!session) {
+      // Sauvegarder l'URL de redirection
+      const redirectUrl = new URL('/login', req.url);
+      if (path !== '/') {
+        redirectUrl.searchParams.set('redirectTo', path);
+      }
+      return NextResponse.redirect(redirectUrl);
     }
 
     // Vérification des routes admin
-    if (pathname.startsWith('/admin')) {
+    if (path.startsWith('/admin')) {
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
       const userEmail = session.user?.email;
 
       if (!userEmail || !adminEmails.includes(userEmail)) {
-        console.warn('Admin access denied for:', userEmail);
+        console.warn('Unauthorized admin access attempt:', userEmail);
         return NextResponse.redirect(new URL('/', req.url));
       }
     }
 
-    // Ajouter des en-têtes de sécurité supplémentaires
+    // Ajout des en-têtes de sécurité
     const response = NextResponse.next();
     response.headers.set('X-Frame-Options', 'DENY');
     response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('X-XSS-Protection', '1; mode=block');
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     response.headers.set(
       'Permissions-Policy',
@@ -109,18 +90,17 @@ export async function middleware(req: NextRequest) {
 
   } catch (error) {
     console.error('Middleware error:', error);
-    return NextResponse.redirect(new URL('/login', req.url));
+    
+    // En cas d'erreur, rediriger vers la page de login
+    const redirectUrl = new URL('/login', req.url);
+    redirectUrl.searchParams.set('error', 'auth');
+    return NextResponse.redirect(redirectUrl);
   }
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    // Exclure les fichiers statiques et autres ressources
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
