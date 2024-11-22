@@ -3,58 +3,74 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export async function middleware(req: NextRequest) {
+  // Créer le client Supabase
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
   const pathname = req.nextUrl.pathname;
 
   try {
-    // Obtenir la session
+    // Vérifier la session
     const { data: { session } } = await supabase.auth.getSession();
 
-    // Si pas de session, rediriger vers login sauf pour les routes publiques
-    if (!session) {
-      if (pathname !== '/login') {
-        return NextResponse.redirect(new URL('/login', req.url));
+    // Routes publiques qui ne nécessitent pas d'authentification
+    if (pathname === '/login') {
+      if (session) {
+        // Si déjà connecté, rediriger vers l'accueil
+        return NextResponse.redirect(new URL('/', req.url));
       }
       return res;
     }
 
-    // Si déjà connecté et sur login, rediriger vers home
-    if (pathname === '/login' && session) {
-      return NextResponse.redirect(new URL('/', req.url));
+    // Protection des routes authentifiées
+    if (!session) {
+      console.log('No session, redirecting to login');
+      return NextResponse.redirect(new URL('/login', req.url));
     }
 
     // Vérification spécifique pour les routes admin
     if (pathname.startsWith('/admin')) {
-      // Liste des emails admin depuis les variables d'environnement
-      const adminEmails = (process.env.ADMIN_EMAILS || '').split(',');
+      const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
       const userEmail = session.user?.email;
 
-      // Vérifier si l'email de l'utilisateur est dans la liste des admins
+      console.log({
+        type: 'Admin Access Check',
+        pathname,
+        adminEmails,
+        userEmail,
+        hasAccess: userEmail ? adminEmails.includes(userEmail) : false
+      });
+
       if (!userEmail || !adminEmails.includes(userEmail)) {
-        console.log('Accès non autorisé à la page admin:', userEmail);
+        console.log('Admin access denied for:', userEmail);
         return NextResponse.redirect(new URL('/', req.url));
       }
+
+      console.log('Admin access granted for:', userEmail);
     }
 
+    // Continuer la requête
     return res;
+
   } catch (error) {
-    console.error('Erreur middleware:', error);
+    console.error('Middleware error:', error);
     // En cas d'erreur, rediriger vers login
-    return NextResponse.redirect(new URL('/login', req.url));
+    if (pathname !== '/login') {
+      return NextResponse.redirect(new URL('/login', req.url));
+    }
+    return res;
   }
 }
 
-// Mise à jour du matcher pour inclure toutes les routes nécessaires
 export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
+     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public (public files)
+     * - public folder
      */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
-  ],
+    '/((?!api|_next/static|_next/image|favicon.ico|public/).*)'
+  ]
 };
