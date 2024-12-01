@@ -9,12 +9,12 @@ import {
   Mic,
   MicOff,
   Trash2,
+  Clock,
   Settings,
   LogOut
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
-// Types pour la reconnaissance vocale
 interface IWindow extends Window {
   webkitSpeechRecognition: any;
   SpeechRecognition: any;
@@ -30,18 +30,6 @@ interface SpeechRecognitionEvent {
   };
 }
 
-interface CustomSpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: any) => void;
-  onend: () => void;
-  start: () => void;
-  stop: () => void;
-}
-
-// Types pour les messages
 interface Message {
   id: string;
   type: 'user' | 'bot';
@@ -55,7 +43,6 @@ const SUGGESTED_QUESTIONS = [
 ] as const;
 
 const Home = () => {
-  // États
   const [message, setMessage] = useState<string>('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -65,15 +52,13 @@ const Home = () => {
   const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
   const [isClient, setIsClient] = useState<boolean>(false);
 
-  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<CustomSpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
-  // Hooks
   const router = useRouter();
-  const { signOut, isAdmin, session } = useAuth();
+  const { session, signOut } = useAuth();
+  const isAdmin = session?.user?.email === 'aissa.moustaine@gmail.com';
 
-  // Formatage de l'heure
   const formatTime = (date: Date | string | number) => {
     try {
       const dateObject = new Date(date);
@@ -88,7 +73,6 @@ const Home = () => {
     }
   };
 
-  // Initialisation
   useEffect(() => {
     setIsClient(true);
 
@@ -99,7 +83,7 @@ const Home = () => {
         const SpeechRecognition = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
         
         if (SpeechRecognition) {
-          const recognition: CustomSpeechRecognition = new SpeechRecognition();
+          const recognition = new SpeechRecognition();
           recognition.continuous = false;
           recognition.interimResults = false;
           recognition.lang = 'fr-FR';
@@ -125,7 +109,7 @@ const Home = () => {
       }
     }
 
-    // Initialisation du mode sombre
+    // Mode sombre
     const savedDarkMode = typeof window !== 'undefined' 
       ? localStorage.getItem('darkMode') === 'true'
       : false;
@@ -136,7 +120,6 @@ const Home = () => {
     }
   }, []);
 
-  // Gestion du mode sombre
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('darkMode', String(darkMode));
@@ -148,14 +131,12 @@ const Home = () => {
     }
   }, [darkMode]);
 
-  // Scroll automatique
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // Gestion des messages
   const handleSubmit = useCallback(
     async (event: React.FormEvent | Event, suggestedMessage?: string) => {
       event.preventDefault();
@@ -198,7 +179,6 @@ const Home = () => {
         setMessages((prev) => [...prev, botResponse]);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Une erreur est survenue');
-        console.error('Erreur lors de l\'envoi du message:', err);
       } finally {
         setLoading(false);
       }
@@ -258,6 +238,15 @@ const Home = () => {
             </h1>
           </div>
           <div className="flex items-center space-x-2">
+            {/* Bouton Historique pour tous les utilisateurs */}
+            <button
+              onClick={() => router.push('/admin/history')}
+              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              title="Historique"
+            >
+              <Clock className="w-5 h-5" />
+            </button>
+
             {isAdmin && (
               <button
                 onClick={() => router.push('/admin/history')}
@@ -267,17 +256,15 @@ const Home = () => {
                 <Settings className="w-5 h-5" />
               </button>
             )}
+
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
               title={darkMode ? 'Mode clair' : 'Mode sombre'}
             >
-              {darkMode ? (
-                <Sun className="w-5 h-5" />
-              ) : (
-                <Moon className="w-5 h-5" />
-              )}
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
+
             <button
               onClick={clearHistory}
               className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
@@ -285,6 +272,7 @@ const Home = () => {
             >
               <Trash2 className="w-5 h-5" />
             </button>
+
             <button
               onClick={signOut}
               className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"

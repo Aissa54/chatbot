@@ -3,7 +3,7 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Configuration
+// Routes publiques qui ne nécessitent pas d'authentification
 const publicRoutes = [
   '/login',
   '/auth/callback',
@@ -11,30 +11,35 @@ const publicRoutes = [
   '/auth/reset-password'
 ];
 
-const publicPaths = [
+// Routes qui doivent être ignorées par le middleware
+const ignoredRoutes = [
   '/_next',
   '/images',
   '/api/auth',
   '/favicon.ico'
 ];
 
-const isPublicPath = (path: string): boolean => {
-  return publicPaths.some(publicPath => path.startsWith(publicPath));
+const isPublicRoute = (pathname: string): boolean => {
+  return publicRoutes.includes(pathname);
+};
+
+const shouldIgnoreRoute = (pathname: string): boolean => {
+  return ignoredRoutes.some(route => pathname.startsWith(route));
 };
 
 export async function middleware(req: NextRequest) {
-  try {
-    // Ignorer les ressources statiques et les routes publiques
-    const path = req.nextUrl.pathname;
-    if (isPublicPath(path)) {
-      return NextResponse.next();
-    }
+  // Ignorer les routes statiques et les ressources
+  if (shouldIgnoreRoute(req.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
 
-    // Initialisation de la réponse et du client Supabase
+  try {
+    // Initialiser le client Supabase
     const res = NextResponse.next();
     const supabase = createMiddlewareClient({ req, res });
+    const pathname = req.nextUrl.pathname;
 
-    // Vérification de la session
+    // Vérifier la session
     const {
       data: { session },
       error: sessionError
@@ -42,40 +47,48 @@ export async function middleware(req: NextRequest) {
 
     if (sessionError) {
       console.error('Session error:', sessionError);
-      throw sessionError;
+      return NextResponse.redirect(new URL('/login', req.url));
     }
 
     // Gestion des routes publiques
-    if (publicRoutes.includes(path)) {
+    if (isPublicRoute(pathname)) {
       if (session) {
-        // Rediriger vers l'accueil si déjà connecté
+        // Rediriger vers la page d'accueil si déjà connecté
         return NextResponse.redirect(new URL('/', req.url));
       }
       return res;
     }
 
-    // Vérification de l'authentification
+    // Rediriger vers la page de login si non authentifié
     if (!session) {
-      // Sauvegarder l'URL de redirection
+      if (pathname === '/') {
+        return NextResponse.redirect(new URL('/login', req.url));
+      }
+
       const redirectUrl = new URL('/login', req.url);
-      if (path !== '/') {
-        redirectUrl.searchParams.set('redirectTo', path);
+      // Sauvegarder l'URL de destination pour la redirection après login
+      if (pathname !== '/') {
+        redirectUrl.searchParams.set('redirectTo', pathname);
       }
       return NextResponse.redirect(redirectUrl);
     }
 
-    // Vérification des routes admin
-    if (path.startsWith('/admin')) {
-      const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',') || [];
-      const userEmail = session.user?.email;
+    // Gestion spéciale des routes admin
+    if (pathname.startsWith('/admin')) {
+      // Pour l'historique, autoriser tous les utilisateurs authentifiés
+      if (pathname === '/admin/history') {
+        return res;
+      }
 
-      if (!userEmail || !adminEmails.includes(userEmail)) {
-        console.warn('Unauthorized admin access attempt:', userEmail);
+      // Pour les autres routes admin, vérifier si l'utilisateur est admin
+      const isAdmin = session.user.email === 'aissa.moustaine@gmail.com';
+      if (!isAdmin) {
+        console.warn('Tentative d\'accès non autorisé à une route admin:', session.user.email);
         return NextResponse.redirect(new URL('/', req.url));
       }
     }
 
-    // Ajout des en-têtes de sécurité
+    // Ajouter des en-têtes de sécurité
     const response = NextResponse.next();
     response.headers.set('X-Frame-Options', 'DENY');
     response.headers.set('X-Content-Type-Options', 'nosniff');
@@ -86,21 +99,34 @@ export async function middleware(req: NextRequest) {
       'camera=(), microphone=(), geolocation=(), interest-cohort=()'
     );
 
+    // Ajouter l'ID utilisateur aux en-têtes pour le logging si l'utilisateur est connecté
+    if (session?.user?.id) {
+      response.headers.set('X-User-ID', session.user.id);
+    }
+
     return response;
 
   } catch (error) {
     console.error('Middleware error:', error);
-    
     // En cas d'erreur, rediriger vers la page de login
     const redirectUrl = new URL('/login', req.url);
-    redirectUrl.searchParams.set('error', 'auth');
     return NextResponse.redirect(redirectUrl);
   }
 }
 
+// Configuration du matcher corrigée
 export const config = {
   matcher: [
-    // Exclure les fichiers statiques et autres ressources
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+    /*
+     * Match only specific paths:
+     * - /admin/... (all admin routes)
+     * - /login (login page)
+     * - / (home page)
+     * - all other routes except static files, images, etc.
+     */
+    '/admin/:path*',
+    '/login',
+    '/',
+    '/((?!api|_next/static|_next/image|favicon.ico).*)'
+  ]
 };
