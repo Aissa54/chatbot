@@ -1,38 +1,41 @@
-// pages/api/chatbot.ts
 import { createPagesServerClient } from '@supabase/auth-helpers-nextjs';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { LRUCache } from 'lru-cache';
 
-// Types
+// Définition des types pour les requêtes et réponses
+interface ChatRequest {
+  message: string;
+  conversationId?: string;
+}
+
 interface ChatResponse {
   text: string;
+  conversationId: string;
   error?: string;
 }
 
-interface ChatRequest {
-  message: string;
+interface ChatErrorResponse {
+  text: string;
+  conversationId: string;
+  error: string;
 }
 
-// Configuration du rate limiting
+// Configuration du cache pour le rate limiting
 const rateLimit = new LRUCache({
-  max: 500,
-  ttl: 60000, // 1 minute
+  max: 500, // Nombre maximum d'utilisateurs à suivre
+  ttl: 60000, // Durée de vie d'une entrée (1 minute)
 });
 
-// Vérification des variables d'environnement
-const validateEnv = () => {
-  const required = [
-    'NEXT_PUBLIC_FLOWISE_API_KEY',
-    'NEXT_PUBLIC_FLOWISE_URL'
-  ];
-  
-  const missing = required.filter(key => !process.env[key]);
-  if (missing.length > 0) {
-    throw new Error(`Missing environment variables: ${missing.join(', ')}`);
-  }
+// Helper pour créer une réponse d'erreur standardisée
+const createErrorResponse = (error: string, conversationId: string = ''): ChatErrorResponse => {
+  return {
+    text: '',
+    conversationId,
+    error,
+  };
 };
 
-// Vérification du rate limit
+// Vérifie si un utilisateur a dépassé sa limite de requêtes
 const checkRateLimit = (userId: string): boolean => {
   const limit = Number(process.env.NEXT_PUBLIC_RATE_LIMIT_REQUESTS) || 10;
   const current = (rateLimit.get(userId) as number) || 0;
@@ -45,49 +48,62 @@ const checkRateLimit = (userId: string): boolean => {
   return true;
 };
 
+// Gestionnaire principal des requêtes
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<ChatResponse>
+  res: NextApiResponse<ChatResponse | ChatErrorResponse>
 ) {
   // Vérification de la méthode HTTP
   if (req.method !== 'POST') {
-    return res.status(405).json({ 
-      text: '', 
-      error: 'Method not allowed' 
-    });
+    return res.status(405).json(createErrorResponse('Méthode non autorisée'));
   }
 
   try {
-    // Validation des variables d'environnement
-    validateEnv();
-
-    // Initialisation de Supabase
+    // Initialisation de la connexion Supabase et vérification de la session
     const supabase = createPagesServerClient({ req, res });
     const { data: { session } } = await supabase.auth.getSession();
 
-    // Vérification de l'authentification
     if (!session) {
-      return res.status(401).json({ 
-        text: '', 
-        error: 'Unauthorized' 
-      });
+      return res.status(401).json(createErrorResponse('Non autorisé'));
     }
 
     // Vérification du rate limit
     if (!checkRateLimit(session.user.id)) {
-      return res.status(429).json({
-        text: '',
-        error: 'Rate limit exceeded. Please try again later.'
-      });
+      return res.status(429).json(
+        createErrorResponse('Limite de requêtes atteinte. Veuillez réessayer plus tard.')
+      );
     }
 
-    // Validation du message
-    const { message } = req.body as ChatRequest;
+    // Récupération et validation du message
+    const { message, conversationId } = req.body as ChatRequest;
+
     if (!message?.trim()) {
-      return res.status(400).json({ 
-        text: '', 
-        error: 'Message is required' 
-      });
+      return res.status(400).json(createErrorResponse('Le message est requis'));
+    }
+
+    // Gestion de la conversation
+    let activeConversationId: string;
+
+    if (!conversationId) {
+      // Création d'une nouvelle conversation
+      const { data: newConversation, error: conversationError } = await supabase
+        .from('conversations')
+        .insert({
+          user_id: session.user.id,
+          title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (conversationError || !newConversation) {
+        throw new Error('Erreur lors de la création de la conversation');
+      }
+      
+      activeConversationId = newConversation.id;
+    } else {
+      activeConversationId = conversationId;
     }
 
     // Mise à jour des statistiques utilisateur
@@ -104,77 +120,93 @@ export default async function handler(
       });
 
     if (userError) {
-      console.error('User stats update error:', userError);
+      console.error('Erreur mise à jour stats utilisateur:', userError);
     }
 
-    // Appel à l'API Flowise
-    const flowiseResponse = await fetch(process.env.NEXT_PUBLIC_FLOWISE_URL!, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_FLOWISE_API_KEY}`,
-      },
-      body: JSON.stringify({ question: message }),
-    });
+    // Appel à l'API Flowise pour obtenir la réponse du chatbot
+    const flowiseResponse = await fetch(
+      'https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/5b404065-4045-448d-9bb9-40e0e492281f',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Basic ' + Buffer.from('COLDORG:Test_BOT007!').toString('base64'),
+        },
+        body: JSON.stringify({ question: message }),
+      }
+    );
 
     if (!flowiseResponse.ok) {
-      throw new Error('Flowise API error');
+      throw new Error('Erreur API Flowise');
     }
 
-    const flowiseData = await flowiseResponse.json();
+    const botResponse = await flowiseResponse.json();
 
-    // Enregistrement dans l'historique
+    // Sauvegarde de la conversation dans l'historique
     const { error: historyError } = await supabase
       .from('question_history')
       .insert({
         user_id: session.user.id,
+        conversation_id: activeConversationId,
         question: message,
-        answer: flowiseData.text,
+        answer: botResponse.text,
         created_at: new Date().toISOString()
       });
 
     if (historyError) {
-      console.error('History save error:', historyError);
+      console.error('Erreur sauvegarde historique:', historyError);
     }
 
-    // Mise à jour du compteur de questions
+    // Mise à jour de la date de dernière modification de la conversation
+    const { error: updateError } = await supabase
+      .from('conversations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', activeConversationId);
+
+    if (updateError) {
+      console.error('Erreur mise à jour conversation:', updateError);
+    }
+
+    // Incrémentation du compteur de questions de l'utilisateur
     const { error: statsError } = await supabase.rpc('increment_user_questions', {
       user_id: session.user.id
     });
 
     if (statsError) {
-      console.error('Stats update error:', statsError);
+      console.error('Erreur mise à jour compteur:', statsError);
     }
 
-    // Envoi de la réponse
+    // Envoi de la réponse au client
     return res.status(200).json({
-      text: flowiseData.text || "Je n'ai pas compris la question."
+      text: botResponse.text || "Je n'ai pas compris la question.",
+      conversationId: activeConversationId
     });
 
   } catch (error) {
-    console.error('Chatbot error:', error);
+    console.error('Erreur chatbot:', error);
     
-    // Gestion des différents types d'erreurs
+    // Gestion spécifique des erreurs
     if (error instanceof Error) {
-      if (error.message.includes('Unauthorized')) {
-        return res.status(401).json({
-          text: '',
-          error: 'Session expirée. Veuillez vous reconnecter.'
-        });
+      if (error.message.includes('Non autorisé')) {
+        return res.status(401).json(
+          createErrorResponse('Session expirée. Veuillez vous reconnecter.')
+        );
       }
       
-      if (error.message.includes('Missing environment')) {
-        return res.status(500).json({
-          text: '',
-          error: 'Erreur de configuration du serveur'
-        });
+      if (error.message.includes('Erreur API Flowise')) {
+        return res.status(503).json(
+          createErrorResponse('Le service de chat est temporairement indisponible.')
+        );
       }
     }
 
     // Erreur générique
-    return res.status(500).json({
-      text: '',
-      error: 'Une erreur inattendue est survenue. Veuillez réessayer.'
-    });
+    return res.status(500).json(
+      createErrorResponse(
+        error instanceof Error 
+          ? error.message 
+          : 'Une erreur inattendue est survenue'
+      )
+    );
   }
 }
