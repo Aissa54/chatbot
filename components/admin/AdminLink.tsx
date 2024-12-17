@@ -1,34 +1,48 @@
-import { useEffect, useState } from 'react';
+// components/admin/AdminLink.tsx
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { Settings } from 'lucide-react';
 
 const AdminLink = () => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch('/api/check-admin');
-        const data = await res.json();
-        setIsAdmin(data.isAdmin);
-      } catch (error) {
-        console.error('Error:', error);
-        setIsAdmin(false);
-      }
-    };
-    
-    fetchData();
+  const checkAdminStatus = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/check-admin', {
+        headers: {
+          'Cache-Control': 'no-cache',
+        },
+      });
+      
+      if (!res.ok) throw new Error('Erreur de vérification admin');
+      
+      const data = await res.json();
+      setIsAdmin(data.isAdmin);
+    } catch (error) {
+      console.error('Erreur de vérification admin:', error);
+      setIsAdmin(false);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  if (!isAdmin) {
-    return null;
-  }
+  useEffect(() => {
+    checkAdminStatus();
+  }, [checkAdminStatus]);
+
+  if (isLoading || !isAdmin) return null;
 
   return (
-    <Link 
-      href="/admin" 
-      className="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+    <Link
+      href="/admin"
+      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium 
+                 text-white bg-blue-600 rounded-md hover:bg-blue-700 
+                 transition-colors duration-200"
     >
-      Administration
+      <Settings className="w-4 h-4" />
+      <span>Administration</span>
     </Link>
   );
 };

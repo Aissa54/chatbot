@@ -1,57 +1,34 @@
-declare global {
-  // Interfaces pour les tables
-  interface User {
-    id: string;
-    email: string;
-    name?: string | null;
-    questions_used: number;
-    last_question_date?: string | null;
-    created_at: string;
-    updated_at: string;
-  }
-
-  interface QuestionHistory {
-    id?: string;
-    user_id: string;
-    question: string;
-    answer: string;
-    created_at: string;
-  }
-
-  // Speech Recognition types
-  interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
-  }
-
-  interface SpeechRecognitionEvent {
-    results: {
-      [index: number]: {
-        [index: number]: {
-          transcript: string;
-        };
-      };
-    };
-  }
-
-  interface SpeechRecognition extends EventTarget {
-    continuous: boolean;
-    lang: string;
-    interimResults: boolean;
-    maxAlternatives: number;
-    onresult: (event: SpeechRecognitionEvent) => void;
-    onerror: (event: Event) => void;
-    onend: () => void;
-    start: () => void;
-    stop: () => void;
-    abort: () => void;
-  }
-
-  interface ChatbotResponse {
-    text: string;
-    error?: string;
-    questionsUsed?: number;
-  }
+// types.d.ts
+interface Conversation {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export {};
+interface QuestionHistory {
+  id: string;
+  user_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  conversation_id: string;
+}
+
+interface UserProfile {
+  id: string;
+  email: string;
+  role: string;
+  company: string;
+  created_at: string;
+  last_seen: string;
+  metadata: Record<string, any>;
+}
+
+interface Message {
+  id: string;
+  type: 'user' | 'bot';
+  content: string;
+  timestamp: Date;
+}

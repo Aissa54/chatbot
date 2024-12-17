@@ -3,7 +3,7 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Routes publiques qui ne nécessitent pas d'authentification
+// Routes qui ne nécessitent pas d'authentification
 const publicRoutes = [
   '/login',
   '/auth/callback',
@@ -11,7 +11,7 @@ const publicRoutes = [
   '/auth/reset-password'
 ];
 
-// Routes qui doivent être ignorées par le middleware
+// Routes à ignorer
 const ignoredRoutes = [
   '/_next',
   '/images',
@@ -28,78 +28,69 @@ const shouldIgnoreRoute = (pathname: string): boolean => {
 };
 
 export async function middleware(req: NextRequest) {
-  // Ignorer les routes statiques et les ressources
+  // Ignorer les routes statiques
   if (shouldIgnoreRoute(req.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
   try {
-    // Initialiser le client Supabase
     const res = NextResponse.next();
     const supabase = createMiddlewareClient({ req, res });
     const pathname = req.nextUrl.pathname;
 
-    // Vérifier la session
+    // Vérification de la session
     const {
       data: { session },
       error: sessionError
     } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.error('Session error:', sessionError);
+      console.error('Erreur de session:', sessionError);
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
     // Gestion des routes publiques
     if (isPublicRoute(pathname)) {
       if (session) {
-        // Rediriger vers la page d'accueil si déjà connecté
         return NextResponse.redirect(new URL('/', req.url));
       }
       return res;
     }
 
-    // Rediriger vers la page de login si non authentifié
+    // Redirection si non authentifié
     if (!session) {
-      if (pathname === '/') {
-        return NextResponse.redirect(new URL('/login', req.url));
-      }
-
       const redirectUrl = new URL('/login', req.url);
-      // Sauvegarder l'URL de destination pour la redirection après login
       if (pathname !== '/') {
         redirectUrl.searchParams.set('redirectTo', pathname);
       }
       return NextResponse.redirect(redirectUrl);
     }
 
-    // Gestion spéciale des routes admin
+    // Routes d'administration
     if (pathname.startsWith('/admin')) {
-      // Pour l'historique, autoriser tous les utilisateurs authentifiés
-      if (pathname === '/admin/history') {
-        return res;
-      }
-
-      // Pour les autres routes admin, vérifier si l'utilisateur est admin
-      const isAdmin = session.user.email === 'aissa.moustaine@gmail.com';
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',')[0];
+      const isAdmin = session.user.email === adminEmail;
+      
       if (!isAdmin) {
-        console.warn('Tentative d\'accès non autorisé à une route admin:', session.user.email);
+        console.warn(`Accès admin non autorisé: ${session.user.email}`);
         return NextResponse.redirect(new URL('/', req.url));
       }
     }
 
-    // Ajouter des en-têtes de sécurité
+    // En-têtes de sécurité
     const response = NextResponse.next();
-    response.headers.set('X-Frame-Options', 'DENY');
-    response.headers.set('X-Content-Type-Options', 'nosniff');
-    response.headers.set('X-XSS-Protection', '1; mode=block');
-    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-    response.headers.set(
-      'Permissions-Policy',
-      'camera=(), microphone=(), geolocation=(), interest-cohort=()'
-    );
+    const securityHeaders = {
+      'X-Frame-Options': 'DENY',
+      'X-Content-Type-Options': 'nosniff',
+      'X-XSS-Protection': '1; mode=block',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()'
+    };
 
-    // Ajouter l'ID utilisateur aux en-têtes pour le logging si l'utilisateur est connecté
+    Object.entries(securityHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+
     if (session?.user?.id) {
       response.headers.set('X-User-ID', session.user.id);
     }
@@ -107,23 +98,13 @@ export async function middleware(req: NextRequest) {
     return response;
 
   } catch (error) {
-    console.error('Middleware error:', error);
-    // En cas d'erreur, rediriger vers la page de login
-    const redirectUrl = new URL('/login', req.url);
-    return NextResponse.redirect(redirectUrl);
+    console.error('Erreur middleware:', error);
+    return NextResponse.redirect(new URL('/login', req.url));
   }
 }
 
-// Configuration du matcher corrigée
 export const config = {
   matcher: [
-    /*
-     * Match only specific paths:
-     * - /admin/... (all admin routes)
-     * - /login (login page)
-     * - / (home page)
-     * - all other routes except static files, images, etc.
-     */
     '/admin/:path*',
     '/login',
     '/',
