@@ -33,13 +33,13 @@ interface AdminStats {
   }[];
 }
 
-// Configuration des couleurs pour les différents types de graphiques
+// Configuration des couleurs pour les différents types de données
 const CHART_COLORS = {
-  positif: '#22c55e',  // Vert pour les feedbacks positifs
-  negatif: '#ef4444',  // Rouge pour les feedbacks négatifs
-  activity: '#8884d8',  // Violet pour le graphique d'activité
-  users: '#3b82f6',    // Bleu pour les statistiques utilisateurs
-  conversations: '#a855f7'  // Violet pour les conversations
+  positif: '#22c55e',    // Vert pour les feedbacks positifs
+  negatif: '#ef4444',    // Rouge pour les feedbacks négatifs
+  activity: '#8884d8',   // Violet pour le graphique d'activité
+  users: '#3b82f6',      // Bleu pour les statistiques utilisateurs
+  conversations: '#a855f7' // Violet pour les conversations
 };
 
 const Dashboard = () => {
@@ -50,12 +50,13 @@ const Dashboard = () => {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
+  // Effet pour charger les statistiques au montage du composant
   useEffect(() => {
     const loadStats = async () => {
       try {
         setLoading(true);
         
-        // Vérification des droits d'administrateur
+        // Vérification des droits administrateur
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user?.email || 
             session.user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',')[0]) {
@@ -63,7 +64,7 @@ const Dashboard = () => {
           return;
         }
 
-        // Chargement des données des tables Supabase
+        // Chargement des données depuis Supabase
         const [
           { data: users },
           { data: conversations },
@@ -74,7 +75,7 @@ const Dashboard = () => {
           supabase.from('message_feedback').select('*')
         ]);
 
-        // Calcul des utilisateurs actifs (7 derniers jours)
+        // Calcul des utilisateurs actifs
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         
@@ -96,7 +97,7 @@ const Dashboard = () => {
           }, {} as Record<string, number>) || {}
         };
 
-        // Calcul de l'activité sur les 7 derniers jours
+        // Calcul de l'activité des 7 derniers jours
         const last7Days = Array.from({ length: 7 }).map((_, i) => {
           const date = new Date();
           date.setDate(date.getDate() - i);
@@ -127,18 +128,16 @@ const Dashboard = () => {
     };
 
     loadStats();
-  }, [router, supabase]);
+  }, [router, supabase]); // Dépendances nécessaires uniquement
 
-  // Affichage du chargement
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
-  // Affichage des erreurs
   if (error || !stats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
@@ -163,7 +162,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* En-tête */}
+        {/* En-tête avec bouton retour */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Tableau de bord administrateur
@@ -255,32 +254,52 @@ const Dashboard = () => {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    label={({ name, value, percent }) => (
+                      <text
+                        x={0}
+                        y={0}
+                        fill={name === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {`${name} (${(percent * 100).toFixed(0)}%)`}
+                      </text>
+                    )}
                     outerRadius={80}
                     dataKey="value"
-                    startAngle={90}
-                    endAngle={-270}
                   >
-                    <Cell key="cell-positif" fill={CHART_COLORS.positif} />
-                    <Cell key="cell-negatif" fill={CHART_COLORS.negatif} />
+                    {feedbackData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.name === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif}
+                      />
+                    ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #ccc',
-                      borderRadius: '4px',
-                      padding: '8px'
-                    }}
-                    formatter={(value, name) => {
-                      const color = name === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif;
-                      return [value, <span style={{ color, fontWeight: 'bold' }}>{name}</span>];
+                  <Tooltip
+                    content={({ payload, label }) => {
+                      if (payload && payload.length > 0) {
+                        const data = payload[0];
+                        return (
+                          <div className="bg-white p-2 border rounded shadow">
+                            <p style={{ color: data.color }}>{`${data.name}: ${data.value}`}</p>
+                          </div>
+                        );
+                      }
+                      return null;
                     }}
                   />
-                  <Legend 
-                    formatter={(value) => {
-                      const color = value === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif;
-                      return <span style={{ color, fontWeight: 'bold' }}>{value}</span>;
-                    }}
+                  <Legend
+                    formatter={(value, entry) => (
+                      <span
+                        key={`legend-${value}`}
+                        style={{
+                          color: value === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {value}
+                      </span>
+                    )}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -296,26 +315,27 @@ const Dashboard = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.userActivity}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
+                  <XAxis
                     dataKey="date"
-                    tickFormatter={(date) => new Date(date).toLocaleDateString('fr-FR', { 
-                      month: 'numeric', 
-                      day: 'numeric' 
+                    tickFormatter={(date) => new Date(date).toLocaleDateString('fr-FR', {
+                      month: 'numeric',
+                      day: 'numeric'
                     })}
                   />
                   <YAxis />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{
                       backgroundColor: 'white',
                       border: '1px solid #ccc',
                       borderRadius: '4px',
                       padding: '8px'
                     }}
+                    formatter={(value) => [`${value} questions`, 'Nombre de questions']}
                   />
                   <Legend />
-                  <Bar 
-                    dataKey="count" 
-                    name="Questions" 
+                  <Bar
+                    dataKey="count"
+                    name="Questions"
                     fill={CHART_COLORS.activity}
                   />
                 </BarChart>
