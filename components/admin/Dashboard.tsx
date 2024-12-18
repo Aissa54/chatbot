@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import {
   BarChart,
@@ -10,195 +11,316 @@ import {
   Legend,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  ResponsiveContainer
 } from 'recharts';
+import { ArrowLeft, Users, MessageSquare, ThumbsUp } from 'lucide-react';
 
-interface FeedbackStats {
-  positiveCount: number;
-  negativeCount: number;
-  reasonBreakdown: {
-    [key: string]: number;
-  };
-  totalResponses: number;
-}
-
-interface UserStats {
+// Types pour les statistiques d'administration
+interface AdminStats {
   totalUsers: number;
   activeUsers: number;
   totalConversations: number;
-  averageMessagesPerUser: number;
+  totalQuestions: number;
+  feedbackStats: {
+    positive: number;
+    negative: number;
+    reasons: Record<string, number>;
+  };
+  userActivity: {
+    date: string;
+    count: number;
+  }[];
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+// Configuration des couleurs pour les différents types de graphiques
+const CHART_COLORS = {
+  positif: '#22c55e',  // Vert pour les feedbacks positifs
+  negatif: '#ef4444',  // Rouge pour les feedbacks négatifs
+  activity: '#8884d8',  // Violet pour le graphique d'activité
+  users: '#3b82f6',    // Bleu pour les statistiques utilisateurs
+  conversations: '#a855f7'  // Violet pour les conversations
+};
 
-const AdminDashboard = () => {
-  const [feedbackStats, setFeedbackStats] = useState<FeedbackStats | null>(null);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
+const Dashboard = () => {
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
+  const router = useRouter();
   const supabase = createClientComponentClient();
 
   useEffect(() => {
     const loadStats = async () => {
       try {
-        // Charger les statistiques de feedback
-        const { data: feedbackData, error: feedbackError } = await supabase
-          .from('message_feedback')
-          .select('*');
+        setLoading(true);
+        
+        // Vérification des droits d'administrateur
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.email || 
+            session.user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',')[0]) {
+          router.push('/');
+          return;
+        }
 
-        if (feedbackError) throw feedbackError;
+        // Chargement des données des tables Supabase
+        const [
+          { data: users },
+          { data: conversations },
+          { data: feedbacks }
+        ] = await Promise.all([
+          supabase.from('users_profiles').select('*'),
+          supabase.from('conversations').select('*').order('created_at', { ascending: false }),
+          supabase.from('message_feedback').select('*')
+        ]);
 
-        const stats: FeedbackStats = {
-          positiveCount: feedbackData.filter(f => f.isPositive).length,
-          negativeCount: feedbackData.filter(f => !f.isPositive).length,
-          reasonBreakdown: feedbackData.reduce((acc, feedback) => {
-            if (feedback.reason) {
-              acc[feedback.reason] = (acc[feedback.reason] || 0) + 1;
+        // Calcul des utilisateurs actifs (7 derniers jours)
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        
+        const activeUsers = users?.filter(u => {
+          if (!u.last_seen) return false;
+          const lastSeen = new Date(u.last_seen);
+          return lastSeen > weekAgo;
+        }).length || 0;
+
+        // Calcul des statistiques de feedback
+        const feedbackStats = {
+          positive: feedbacks?.filter(f => f.is_positive).length || 0,
+          negative: feedbacks?.filter(f => !f.is_positive).length || 0,
+          reasons: feedbacks?.reduce((acc, f) => {
+            if (f.reason) {
+              acc[f.reason] = (acc[f.reason] || 0) + 1;
             }
             return acc;
-          }, {} as { [key: string]: number }),
-          totalResponses: feedbackData.length
+          }, {} as Record<string, number>) || {}
         };
 
-        setFeedbackStats(stats);
+        // Calcul de l'activité sur les 7 derniers jours
+        const last7Days = Array.from({ length: 7 }).map((_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          const dateStr = date.toISOString().split('T')[0];
+          return {
+            date: dateStr,
+            count: conversations?.filter(c => 
+              c.created_at.startsWith(dateStr)
+            ).length || 0
+          };
+        }).reverse();
 
-        // Charger les statistiques utilisateurs
-        const { data: userData, error: userError } = await supabase
-          .from('users_profiles')
-          .select('*');
-
-        if (userError) throw userError;
-
-        const { data: conversationData, error: convError } = await supabase
-          .from('conversations')
-          .select('*');
-
-        if (convError) throw convError;
-
-        const userStatsData: UserStats = {
-          totalUsers: userData.length,
-          activeUsers: userData.filter(u => u.last_seen && 
-            new Date(u.last_seen).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000).length,
-          totalConversations: conversationData.length,
-          averageMessagesPerUser: conversationData.length / (userData.length || 1)
-        };
-
-        setUserStats(userStatsData);
+        setStats({
+          totalUsers: users?.length || 0,
+          activeUsers,
+          totalConversations: conversations?.length || 0,
+          totalQuestions: conversations?.length || 0,
+          feedbackStats,
+          userActivity: last7Days
+        });
 
       } catch (error) {
         console.error('Erreur chargement statistiques:', error);
+        setError('Erreur lors du chargement des statistiques');
       } finally {
         setLoading(false);
       }
     };
 
     loadStats();
-  }, [supabase]);
+  }, [router, supabase]);
 
+  // Affichage du chargement
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-96">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
       </div>
     );
   }
 
-  const feedbackPieData = feedbackStats ? [
-    { name: 'Positif', value: feedbackStats.positiveCount },
-    { name: 'Négatif', value: feedbackStats.negativeCount }
-  ] : [];
+  // Affichage des erreurs
+  if (error || !stats) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <p className="text-red-500 mb-4">{error || 'Aucune donnée disponible'}</p>
+        <button
+          onClick={() => router.push('/')}
+          className="flex items-center space-x-2 text-blue-500 hover:text-blue-600"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Retour à l'accueil</span>
+        </button>
+      </div>
+    );
+  }
 
-  const reasonBarData = feedbackStats ? 
-    Object.entries(feedbackStats.reasonBreakdown).map(([key, value]) => ({
-      name: key,
-      count: value
-    })) : [];
+  // Préparation des données pour le graphique en camembert
+  const feedbackData = [
+    { name: 'Positifs', value: stats.feedbackStats.positive },
+    { name: 'Négatifs', value: stats.feedbackStats.negative }
+  ];
 
   return (
-    <div className="p-6 space-y-8">
-      <h1 className="text-2xl font-bold mb-8">Tableau de bord</h1>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* En-tête */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Tableau de bord administrateur
+          </h1>
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 dark:text-gray-300"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Retour</span>
+          </button>
+        </div>
 
-      {/* Statistiques générales */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Utilisateurs total</h3>
-          <p className="text-3xl font-bold text-blue-500">
-            {userStats?.totalUsers || 0}
-          </p>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Utilisateurs actifs (7j)</h3>
-          <p className="text-3xl font-bold text-green-500">
-            {userStats?.activeUsers || 0}
-          </p>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Total conversations</h3>
-          <p className="text-3xl font-bold text-purple-500">
-            {userStats?.totalConversations || 0}
-          </p>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Messages par utilisateur</h3>
-          <p className="text-3xl font-bold text-orange-500">
-            {userStats?.averageMessagesPerUser.toFixed(1) || 0}
-          </p>
-        </div>
-      </div>
+        {/* Cartes statistiques */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Utilisateurs totaux */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Utilisateurs totaux
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {stats.totalUsers}
+                </p>
+              </div>
+              <Users className="w-8 h-8" style={{ color: CHART_COLORS.users }} />
+            </div>
+          </div>
 
-      {/* Graphiques */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Distribution des retours */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Distribution des retours</h3>
-          <div className="h-80">
-            <PieChart width={400} height={300}>
-              <Pie
-                data={feedbackPieData}
-                cx={200}
-                cy={150}
-                innerRadius={60}
-                outerRadius={80}
-                fill="#8884d8"
-                paddingAngle={5}
-                dataKey="value"
-                label
-              >
-                {feedbackPieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
+          {/* Utilisateurs actifs */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Utilisateurs actifs (7j)
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {stats.activeUsers}
+                </p>
+              </div>
+              <Users className="w-8 h-8" style={{ color: CHART_COLORS.users }} />
+            </div>
+          </div>
+
+          {/* Conversations totales */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Conversations totales
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {stats.totalConversations}
+                </p>
+              </div>
+              <MessageSquare className="w-8 h-8" style={{ color: CHART_COLORS.conversations }} />
+            </div>
+          </div>
+
+          {/* Retours positifs */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Retours positifs
+                </p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {stats.feedbackStats.positive}
+                </p>
+              </div>
+              <ThumbsUp className="w-8 h-8" style={{ color: CHART_COLORS.positif }} />
+            </div>
           </div>
         </div>
 
-        {/* Raisons des retours négatifs */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Raisons des retours négatifs</h3>
-          <div className="h-80">
-            <BarChart
-              width={500}
-              height={300}
-              data={reasonBarData}
-              margin={{
-                top: 5,
-                right: 30,
-                left: 20,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="count" fill="#8884d8" />
-            </BarChart>
+        {/* Graphiques */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Distribution des retours */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-6 text-gray-900 dark:text-white">
+              Distribution des retours
+            </h2>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={feedbackData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    outerRadius={80}
+                    dataKey="value"
+                    startAngle={90}
+                    endAngle={-270}
+                  >
+                    <Cell key="cell-positif" fill={CHART_COLORS.positif} />
+                    <Cell key="cell-negatif" fill={CHART_COLORS.negatif} />
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      padding: '8px'
+                    }}
+                    formatter={(value, name) => {
+                      const color = name === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif;
+                      return [value, <span style={{ color, fontWeight: 'bold' }}>{name}</span>];
+                    }}
+                  />
+                  <Legend 
+                    formatter={(value) => {
+                      const color = value === 'Positifs' ? CHART_COLORS.positif : CHART_COLORS.negatif;
+                      return <span style={{ color, fontWeight: 'bold' }}>{value}</span>;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Activité des utilisateurs */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-6 text-gray-900 dark:text-white">
+              Activité des utilisateurs (7 derniers jours)
+            </h2>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.userActivity}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="date"
+                    tickFormatter={(date) => new Date(date).toLocaleDateString('fr-FR', { 
+                      month: 'numeric', 
+                      day: 'numeric' 
+                    })}
+                  />
+                  <YAxis />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      padding: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="count" 
+                    name="Questions" 
+                    fill={CHART_COLORS.activity}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
@@ -206,4 +328,4 @@ const AdminDashboard = () => {
   );
 };
 
-export default AdminDashboard;
+export default Dashboard;
