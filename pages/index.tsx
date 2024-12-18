@@ -27,8 +27,9 @@ import type { Message, IWindow, SpeechRecognitionEvent } from '@/types/index.ts'
 
 // Questions suggérées constantes
 const SUGGESTED_QUESTIONS = [
-  "Quel est le prix d'une amende de classe 3 ?",
+  
   "Quelles sont les obligations d'entretien ?",
+  "Comment fonctionne une installation au CO2 ?"
 ] as const;
 
 const Home = () => {
