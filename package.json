@@ -20,6 +20,7 @@
     "react-datepicker": "^7.5.0",
     "react-dom": "^18",
     "react-google-recaptcha": "^3.1.0",
+    "react-hot-toast": "^2.5.1",
     "recharts": "^2.13.3"
   },
   "devDependencies": {
