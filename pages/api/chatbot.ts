@@ -125,7 +125,7 @@ export default async function handler(
 
     // Appel à l'API Flowise pour obtenir la réponse du chatbot
     const flowiseResponse = await fetch(
-      'https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/5b404065-4045-448d-9bb9-40e0e492281f',
+      'https://flowiseai-railway-production-1649.up.railway.app/api/v1/prediction/5c5bb452-7602-4867-9d71-42f9c235482a',
       {
         method: 'POST',
         headers: {
