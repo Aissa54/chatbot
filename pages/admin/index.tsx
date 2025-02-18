@@ -71,7 +71,7 @@ const AdminDashboard = () => {
       
       // Charger les utilisateurs
       const { data: users, error: usersError } = await supabase
-        .from('users_profiles')
+        .from('user_profiles')
         .select('*');
       if (usersError) throw usersError;
 
